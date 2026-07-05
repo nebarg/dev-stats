@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
-import PlaceholderPattern from '@/components/PlaceholderPattern.vue';
+import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import ActivityChart from '@/components/dashboard/ActivityChart.vue';
+import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
+import StatCard from '@/components/dashboard/StatCard.vue';
+import { formatDayLabel, formatDuration, pluralise } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
+import type { DashboardStats } from '@/types';
+
+const props = defineProps<{
+    stats: DashboardStats;
+}>();
 
 defineOptions({
     layout: {
@@ -13,35 +23,91 @@ defineOptions({
         ],
     },
 });
+
+const rangeLabels: Record<string, string> = {
+    '7d': '7 days',
+    '30d': '30 days',
+    all: 'All time',
+};
+
+const dailyAverageHint = computed(() => {
+    const days = props.stats.active_days;
+
+    return `over ${days} ${pluralise(days, 'active day')}`;
+});
+
+const mostActive = computed(() => props.stats.most_active_day);
 </script>
 
 <template>
     <Head title="Dashboard" />
 
-    <div
-        class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4"
-    >
-        <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div
-                class="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border"
-            >
-                <PlaceholderPattern />
-            </div>
-            <div
-                class="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border"
-            >
-                <PlaceholderPattern />
-            </div>
-            <div
-                class="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border"
-            >
-                <PlaceholderPattern />
+    <div class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h1 class="text-xl font-semibold tracking-tight">
+                Coding activity
+            </h1>
+
+            <div class="flex items-center gap-1 rounded-lg border bg-card p-1">
+                <Link
+                    v-for="key in stats.ranges"
+                    :key="key"
+                    :href="dashboard.url({ query: { range: key } })"
+                    :class="
+                        cn(
+                            'rounded-md px-3 py-1 text-sm font-medium transition-colors',
+                            key === stats.range
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground',
+                        )
+                    "
+                >
+                    {{ rangeLabels[key] ?? key }}
+                </Link>
             </div>
         </div>
-        <div
-            class="relative min-h-[100vh] flex-1 rounded-xl border border-sidebar-border/70 md:min-h-min dark:border-sidebar-border"
-        >
-            <PlaceholderPattern />
+
+        <div class="grid auto-rows-min gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+                label="Total"
+                :value="formatDuration(stats.total_seconds)"
+            />
+            <StatCard
+                label="Today"
+                :value="formatDuration(stats.today_seconds)"
+            />
+            <StatCard
+                label="Daily average"
+                :value="formatDuration(stats.daily_average_seconds)"
+                :hint="dailyAverageHint"
+            />
+            <StatCard
+                label="Most active day"
+                :value="mostActive ? formatDuration(mostActive.seconds) : '—'"
+                :hint="
+                    mostActive
+                        ? formatDayLabel(mostActive.date)
+                        : 'No activity yet'
+                "
+            />
+        </div>
+
+        <ActivityChart :data="stats.activity" />
+
+        <div class="grid gap-4 md:grid-cols-2">
+            <BreakdownCard
+                title="Projects"
+                :items="stats.breakdowns.projects"
+            />
+            <BreakdownCard
+                title="Languages"
+                :items="stats.breakdowns.languages"
+            />
+            <BreakdownCard title="Editors" :items="stats.breakdowns.editors" />
+            <BreakdownCard
+                title="Operating systems"
+                :items="stats.breakdowns.operating_systems"
+            />
         </div>
     </div>
 </template>

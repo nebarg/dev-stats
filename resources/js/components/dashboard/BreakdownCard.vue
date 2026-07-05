@@ -1,0 +1,56 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDuration } from '@/lib/format';
+import type { BreakdownItem } from '@/types';
+
+const props = defineProps<{
+    title: string;
+    items: BreakdownItem[];
+}>();
+
+const max = computed(() =>
+    Math.max(1, ...props.items.map((item) => item.seconds)),
+);
+
+function width(seconds: number): string {
+    return `${Math.max(2, (seconds / max.value) * 100)}%`;
+}
+</script>
+
+<template>
+    <Card>
+        <CardHeader>
+            <CardTitle>{{ title }}</CardTitle>
+        </CardHeader>
+        <CardContent>
+            <p v-if="items.length === 0" class="text-sm text-muted-foreground">
+                No activity yet.
+            </p>
+            <div v-else class="flex flex-col gap-3">
+                <div
+                    v-for="item in items"
+                    :key="item.key"
+                    class="flex flex-col gap-1.5"
+                >
+                    <div
+                        class="flex items-center justify-between gap-2 text-sm"
+                    >
+                        <span class="truncate">{{ item.key }}</span>
+                        <span
+                            class="shrink-0 text-muted-foreground tabular-nums"
+                        >
+                            {{ formatDuration(item.seconds) }}
+                        </span>
+                    </div>
+                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                            class="h-full rounded-full bg-primary"
+                            :style="{ width: width(item.seconds) }"
+                        />
+                    </div>
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+</template>
