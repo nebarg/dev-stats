@@ -6,7 +6,6 @@ use App\Models\Duration;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\Date;
 
 /**
  * Builds the dashboard view-model live from a user's `durations` for a given
@@ -37,7 +36,7 @@ class BuildDashboardStats
     {
         $range = array_key_exists($range, self::RANGES) ? $range : self::DEFAULT_RANGE;
         $timezone = $user->timezone;
-        $today = Date::now($timezone)->startOfDay();
+        $today = CarbonImmutable::now($timezone)->startOfDay();
         $from = self::rangeStart($user, $range, $today);
 
         $durations = self::durations($user, $from, $today);
@@ -78,7 +77,7 @@ class BuildDashboardStats
         $first = Duration::query()->where('user_id', $user->id)->min('started_at');
 
         return $first !== null
-            ? Date::parse($first, 'UTC')->setTimezone($user->timezone)->startOfDay()
+            ? CarbonImmutable::parse($first, 'UTC')->setTimezone($user->timezone)->startOfDay()
             : $today;
     }
 
