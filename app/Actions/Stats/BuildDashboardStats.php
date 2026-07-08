@@ -3,20 +3,35 @@
 namespace App\Actions\Stats;
 
 use App\Models\Duration;
+use App\Models\Heartbeat;
 use App\Models\User;
+use App\Support\UserAgentParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Builds the dashboard view-model live from a user's `durations` for a given
- * range. Aggregation is done in PHP (not SQL) so day buckets land in the user's
- * timezone and the logic stays identical on SQLite (tests) and MySQL (prod).
+ * Builds the dashboard view-model live for a given range: time stats from the
+ * user's `durations`, AI line/token counts from raw `heartbeats`. Day-bucketed
+ * aggregation is done in PHP (not SQL) so buckets land in the user's timezone
+ * and the logic stays identical on SQLite (tests) and MySQL (prod).
  */
 class BuildDashboardStats
 {
     public const string DEFAULT_RANGE = '7d';
 
     private const int BREAKDOWN_LIMIT = 8;
+
+    /**
+     * A focus block must reach this length to count as deep work.
+     */
+    private const int DEEP_WORK_MINIMUM_SECONDS = 25 * 60;
+
+    /**
+     * A day needs at least this much coding time to count towards a streak.
+     */
+    private const int STREAK_MINIMUM_SECONDS = 15 * 60;
+
+    private const int STREAK_WINDOW_DAYS = 400;
 
     /**
      * Selectable ranges → number of days back (null = since first activity).
@@ -57,11 +72,19 @@ class BuildDashboardStats
             'active_days' => $activeDays,
             'most_active_day' => $mostActive,
             'activity' => self::activity($perDay, $from, $today),
+            'focus' => self::focus($durations),
+            'streak' => self::streak($user, $timezone, $today),
+            'editing' => self::editing($user, $from, $today),
+            'ai' => [
+                ...self::aiTotals($user, $from, $today),
+                'agents' => self::agents($user, $from, $today),
+            ],
             'breakdowns' => [
                 'projects' => self::breakdown($durations, 'project', 'No project'),
                 'languages' => self::breakdown($durations, 'language', 'AI Session'),
                 'editors' => self::breakdown($durations, 'editor', 'Unknown editor'),
                 'operating_systems' => self::breakdown($durations, 'operating_system', 'Unknown OS'),
+                'categories' => self::breakdown($durations, 'category', 'Uncategorised'),
             ],
         ];
     }
@@ -90,7 +113,248 @@ class BuildDashboardStats
             ->where('user_id', $user->id)
             ->where('started_at', '>=', $from->setTimezone('UTC'))
             ->where('started_at', '<', $today->addDay()->setTimezone('UTC'))
-            ->get(['started_at', 'duration_seconds', 'project', 'language', 'editor', 'operating_system']);
+            ->orderBy('started_at')
+            ->get([
+                'started_at',
+                'duration_seconds',
+                'project',
+                'language',
+                'editor',
+                'operating_system',
+                'category',
+                'timeout_seconds',
+            ]);
+    }
+
+    /**
+     * Focus metrics from time-ordered durations merged into "blocks": a
+     * duration continues the current block when the gap to the block's end
+     * stays within the timeout, regardless of which grouping key changed.
+     * Context switches count project changes mid-block, not across breaks.
+     *
+     * @param  Collection<int, Duration>  $durations
+     * @return array{longest_block_seconds: int, deep_work_seconds: int, deep_work_blocks: int, context_switches: int}
+     */
+    private static function focus(Collection $durations): array
+    {
+        $longestBlock = 0;
+        $deepWorkSeconds = 0;
+        $deepWorkBlocks = 0;
+        $contextSwitches = 0;
+
+        $blockSeconds = 0;
+        $blockEnd = null;
+        $previousProject = null;
+
+        $finishBlock = static function () use (&$blockSeconds, &$longestBlock, &$deepWorkSeconds, &$deepWorkBlocks): void {
+            $longestBlock = max($longestBlock, $blockSeconds);
+
+            if ($blockSeconds >= self::DEEP_WORK_MINIMUM_SECONDS) {
+                $deepWorkSeconds += $blockSeconds;
+                $deepWorkBlocks++;
+            }
+        };
+
+        foreach ($durations as $duration) {
+            $startsAt = $duration->started_at->getTimestamp();
+            $endsAt = $startsAt + $duration->duration_seconds;
+            $isContinuation = $blockEnd !== null && $startsAt - $blockEnd <= $duration->timeout_seconds;
+
+            if ($isContinuation) {
+                $blockSeconds += $duration->duration_seconds;
+
+                if ($duration->project !== $previousProject) {
+                    $contextSwitches++;
+                }
+            } else {
+                if ($blockEnd !== null) {
+                    $finishBlock();
+                }
+
+                $blockSeconds = $duration->duration_seconds;
+            }
+
+            $blockEnd = max($blockEnd ?? 0, $endsAt);
+            $previousProject = $duration->project;
+        }
+
+        if ($blockEnd !== null) {
+            $finishBlock();
+        }
+
+        return [
+            'longest_block_seconds' => $longestBlock,
+            'deep_work_seconds' => $deepWorkSeconds,
+            'deep_work_blocks' => $deepWorkBlocks,
+            'context_switches' => $contextSwitches,
+        ];
+    }
+
+    /**
+     * Streaks of consecutive days with at least STREAK_MINIMUM_SECONDS of
+     * coding, computed over the last STREAK_WINDOW_DAYS regardless of the
+     * selected range. A quiet today doesn't break the current streak — the
+     * day isn't over yet.
+     *
+     * @return array{current_days: int, longest_days: int}
+     */
+    private static function streak(User $user, string $timezone, CarbonImmutable $today): array
+    {
+        $durations = Duration::query()
+            ->where('user_id', $user->id)
+            ->where('started_at', '>=', $today->subDays(self::STREAK_WINDOW_DAYS)->setTimezone('UTC'))
+            ->get(['started_at', 'duration_seconds']);
+
+        $activeDays = array_keys(array_filter(
+            self::secondsPerDay($durations, $timezone),
+            static fn (int $seconds): bool => $seconds >= self::STREAK_MINIMUM_SECONDS,
+        ));
+        sort($activeDays);
+        $isActive = static fn (CarbonImmutable $day): bool => in_array($day->toDateString(), $activeDays, true);
+
+        $currentDays = 0;
+        $day = $isActive($today) ? $today : $today->subDay();
+
+        while ($isActive($day)) {
+            $currentDays++;
+            $day = $day->subDay();
+        }
+
+        $longestDays = 0;
+        $run = 0;
+        $previous = null;
+
+        foreach ($activeDays as $date) {
+            $run = $previous !== null && CarbonImmutable::parse($previous)->addDay()->toDateString() === $date
+                ? $run + 1
+                : 1;
+            $longestDays = max($longestDays, $run);
+            $previous = $date;
+        }
+
+        return ['current_days' => $currentDays, 'longest_days' => $longestDays];
+    }
+
+    /**
+     * Read/write mix and agent-file (plans, memory, instruction files)
+     * activity from heartbeats. A null `is_write` is unknown and stays out of
+     * every count, and agent-file lines come from write heartbeats only —
+     * reading a plan isn't authoring it.
+     *
+     * @return array{write_events: int, read_events: int, agent_write_events: int, agent_lines: int}
+     */
+    private static function editing(User $user, CarbonImmutable $from, CarbonImmutable $today): array
+    {
+        $totals = Heartbeat::query()
+            ->where('user_id', $user->id)
+            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
+            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->selectRaw(
+                'COUNT(CASE WHEN is_write = 1 THEN 1 END) AS write_events, '
+                .'COUNT(CASE WHEN is_write = 0 THEN 1 END) AS read_events, '
+                ."COUNT(CASE WHEN is_write = 1 AND entity_class = 'agent' THEN 1 END) AS agent_write_events, "
+                ."COALESCE(SUM(CASE WHEN is_write = 1 AND entity_class = 'agent' "
+                .'THEN COALESCE(ai_line_changes, 0) + COALESCE(human_line_changes, 0) END), 0) AS agent_lines'
+            )
+            ->first();
+
+        return [
+            'write_events' => (int) $totals->write_events,
+            'read_events' => (int) $totals->read_events,
+            'agent_write_events' => (int) $totals->agent_write_events,
+            'agent_lines' => (int) $totals->agent_lines,
+        ];
+    }
+
+    /**
+     * AI authorship counts summed straight from heartbeats. Line changes are
+     * signed nets (deletions can push them negative), and the ai/human columns
+     * are disjoint by CLI-side dedup, so each sums independently. A prompt
+     * event is a heartbeat carrying `ai_prompt_length`.
+     *
+     * @return array{ai_lines: int, human_lines: int, input_tokens: int, output_tokens: int, sessions: int, prompts: int, avg_prompt_length: int}
+     */
+    private static function aiTotals(User $user, CarbonImmutable $from, CarbonImmutable $today): array
+    {
+        $totals = Heartbeat::query()
+            ->where('user_id', $user->id)
+            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
+            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->selectRaw(
+                'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                .'COALESCE(SUM(human_line_changes), 0) AS human_lines, '
+                .'COALESCE(SUM(ai_input_tokens), 0) AS input_tokens, '
+                .'COALESCE(SUM(ai_output_tokens), 0) AS output_tokens, '
+                .'COUNT(DISTINCT ai_session) AS sessions, '
+                .'COUNT(ai_prompt_length) AS prompts, '
+                .'COALESCE(AVG(ai_prompt_length), 0) AS avg_prompt_length'
+            )
+            ->first();
+
+        return [
+            'ai_lines' => (int) $totals->ai_lines,
+            'human_lines' => (int) $totals->human_lines,
+            'input_tokens' => (int) $totals->input_tokens,
+            'output_tokens' => (int) $totals->output_tokens,
+            'sessions' => (int) $totals->sessions,
+            'prompts' => (int) $totals->prompts,
+            'avg_prompt_length' => (int) round((float) $totals->avg_prompt_length),
+        ];
+    }
+
+    /**
+     * Per-AI-agent totals, keyed by the model token parsed from each AI
+     * heartbeat's User-Agent. Heartbeats whose UA carries no model (e.g. AI
+     * activity relayed under an editor plugin's UA) are omitted rather than
+     * misattributed. Aggregated per distinct UA in SQL, then merged by model.
+     *
+     * @return array<int, array{key: string, lines: int, input_tokens: int, output_tokens: int, sessions: int}>
+     */
+    private static function agents(User $user, CarbonImmutable $from, CarbonImmutable $today): array
+    {
+        $rows = Heartbeat::query()
+            ->where('user_id', $user->id)
+            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
+            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->where(function ($query) {
+                $query->whereNotNull('ai_session')
+                    ->orWhereNotNull('ai_line_changes')
+                    ->orWhereNotNull('ai_input_tokens')
+                    ->orWhereNotNull('ai_output_tokens');
+            })
+            ->groupBy('user_agent')
+            ->selectRaw(
+                // `lines` is reserved in MySQL, so alias as ai_lines.
+                'user_agent, '
+                .'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                .'COALESCE(SUM(ai_input_tokens), 0) AS input_tokens, '
+                .'COALESCE(SUM(ai_output_tokens), 0) AS output_tokens, '
+                .'COUNT(DISTINCT ai_session) AS sessions'
+            )
+            ->get();
+
+        $agents = [];
+
+        foreach ($rows as $row) {
+            $model = UserAgentParser::aiModel($row->user_agent);
+
+            if ($model === null) {
+                continue;
+            }
+
+            $agent = $agents[$model] ?? ['key' => $model, 'lines' => 0, 'input_tokens' => 0, 'output_tokens' => 0, 'sessions' => 0];
+            $agent['lines'] += (int) $row->ai_lines;
+            $agent['input_tokens'] += (int) $row->input_tokens;
+            $agent['output_tokens'] += (int) $row->output_tokens;
+            $agent['sessions'] += (int) $row->sessions;
+            $agents[$model] = $agent;
+        }
+
+        return collect($agents)
+            ->sortByDesc('lines')
+            ->take(self::BREAKDOWN_LIMIT)
+            ->values()
+            ->all();
     }
 
     /**

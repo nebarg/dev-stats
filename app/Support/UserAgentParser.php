@@ -40,6 +40,33 @@ class UserAgentParser
         ];
     }
 
+    /**
+     * The CLI prepends the AI model to the User-Agent of AI-generated
+     * heartbeats, e.g. "opus/4.1-medium claude-code/2.1.45". Editor heartbeats
+     * start "wakatime/..." and carry no model. Relayed AI heartbeats (sent
+     * under an editor plugin's UA) also carry none.
+     */
+    public static function aiModel(?string $userAgent): ?string
+    {
+        if ($userAgent === null || trim($userAgent) === '') {
+            return null;
+        }
+
+        $tokens = preg_split('/\s+/', trim($userAgent)) ?: [];
+
+        if (count($tokens) < 2) {
+            return null;
+        }
+
+        $model = $tokens[0];
+
+        if (! str_contains($model, '/') || str_starts_with(strtolower($model), 'wakatime/')) {
+            return null;
+        }
+
+        return $model;
+    }
+
     private static function parseOperatingSystem(string $userAgent): ?string
     {
         if (str_contains(strtolower($userAgent), 'wsl2')) {

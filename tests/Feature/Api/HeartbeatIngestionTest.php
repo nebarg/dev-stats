@@ -60,6 +60,7 @@ test('it ingests a bulk heartbeat payload and returns the bulk response shape', 
 
     expect($heartbeat->user_id)->toBe($user->id)
         ->and($heartbeat->entity_type)->toBe('file')
+        ->and($heartbeat->entity_class)->toBe('source')
         ->and($heartbeat->line_count)->toBe(100)
         ->and($heartbeat->line_number)->toBe(42)
         ->and($heartbeat->cursor_position)->toBe(7)
@@ -67,6 +68,16 @@ test('it ingests a bulk heartbeat payload and returns the bulk response shape', 
         ->and($heartbeat->editor)->toBe('vscode')
         ->and($heartbeat->operating_system)->toBe('macos')
         ->and($heartbeat->machine)->toBe('devbook');
+});
+
+test('it classifies agent files on ingest', function () {
+    $user = User::factory()->create();
+
+    $this->postJson(BULK_ENDPOINT, [hbPayload([
+        'entity' => '/Users/dev/.claude/projects/x/memory/notes.md',
+    ])], hbAuth($user))->assertCreated();
+
+    expect(Heartbeat::query()->firstOrFail()->entity_class)->toBe('agent');
 });
 
 test('it stores AI coding fields including a negative net line change and subscription plan', function () {

@@ -24,3 +24,17 @@ test('it applies special-case editor names', function () {
 test('it returns nulls for an empty user agent', function () {
     expect(UserAgentParser::parse(null))->toBe(['editor' => null, 'operating_system' => null]);
 });
+
+test('it parses the ai model prepended to an ai heartbeat user agent', function () {
+    expect(UserAgentParser::aiModel('opus/4.1-medium claude-code/2.1.45'))->toBe('opus/4.1-medium');
+});
+
+test('it finds no ai model in editor or malformed user agents', function (?string $userAgent) {
+    expect(UserAgentParser::aiModel($userAgent))->toBeNull();
+})->with([
+    'cli' => 'wakatime/v1.73.0 (darwin-arm64-go1.22) go1.22 vscode-wakatime/24.0.0',
+    'lone plugin token' => 'claude-code/2.1.45',
+    'first token without version' => 'something else/1.0',
+    'empty' => '',
+    'null' => null,
+]);

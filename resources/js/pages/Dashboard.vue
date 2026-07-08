@@ -2,7 +2,10 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import ActivityChart from '@/components/dashboard/ActivityChart.vue';
+import AgentsCard from '@/components/dashboard/AgentsCard.vue';
+import AiCodingCard from '@/components/dashboard/AiCodingCard.vue';
 import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
+import EditingCard from '@/components/dashboard/EditingCard.vue';
 import StatCard from '@/components/dashboard/StatCard.vue';
 import { formatDayLabel, formatDuration, pluralise } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -37,6 +40,24 @@ const dailyAverageHint = computed(() => {
 });
 
 const mostActive = computed(() => props.stats.most_active_day);
+
+const deepWorkHint = computed(() => {
+    const blocks = props.stats.focus.deep_work_blocks;
+
+    return `${blocks} ${pluralise(blocks, 'block')} of 25 min+`;
+});
+
+const streakValue = computed(() => {
+    const days = props.stats.streak.current_days;
+
+    return `${days} ${pluralise(days, 'day')}`;
+});
+
+const streakHint = computed(() => {
+    const days = props.stats.streak.longest_days;
+
+    return `longest ${days} ${pluralise(days, 'day')}`;
+});
 </script>
 
 <template>
@@ -90,9 +111,29 @@ const mostActive = computed(() => props.stats.most_active_day);
                         : 'No activity yet'
                 "
             />
+            <StatCard
+                label="Longest block"
+                :value="formatDuration(stats.focus.longest_block_seconds)"
+                hint="uninterrupted coding"
+            />
+            <StatCard
+                label="Deep work"
+                :value="formatDuration(stats.focus.deep_work_seconds)"
+                :hint="deepWorkHint"
+            />
+            <StatCard
+                label="Context switches"
+                :value="String(stats.focus.context_switches)"
+                hint="project hops mid-flow"
+            />
+            <StatCard label="Streak" :value="streakValue" :hint="streakHint" />
         </div>
 
         <ActivityChart :data="stats.activity" />
+
+        <AiCodingCard :ai="stats.ai" />
+
+        <EditingCard :editing="stats.editing" />
 
         <div class="grid gap-4 md:grid-cols-2">
             <BreakdownCard
@@ -108,6 +149,11 @@ const mostActive = computed(() => props.stats.most_active_day);
                 title="Operating systems"
                 :items="stats.breakdowns.operating_systems"
             />
+            <BreakdownCard
+                title="Categories"
+                :items="stats.breakdowns.categories"
+            />
+            <AgentsCard :agents="stats.ai.agents" />
         </div>
     </div>
 </template>

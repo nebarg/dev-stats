@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    formatCompactNumber,
     formatDayLabel,
     formatDuration,
     formatWeekday,
@@ -44,6 +45,24 @@ describe('formatDuration', () => {
 
     it('omits a unit that is zero', () => {
         expect(formatDuration(2 * 3600)).toBe('2 hrs');
+    });
+});
+
+describe('formatCompactNumber', () => {
+    it('leaves small counts unabbreviated', () => {
+        expect(formatCompactNumber(0)).toBe('0');
+        expect(formatCompactNumber(305)).toBe('305');
+    });
+
+    it('abbreviates thousands and millions to one decimal place', () => {
+        // The locale picks the suffix ("4.8K" vs "4.8k" vs "4,8 Tsd."), so
+        // assert the abbreviated digits only to stay locale-agnostic.
+        expect(formatCompactNumber(4800)).toMatch(/^4[.,]8/);
+        expect(formatCompactNumber(63100000)).toMatch(/^63[.,]1/);
+    });
+
+    it('keeps the sign of negative net counts', () => {
+        expect(formatCompactNumber(-1200)).toMatch(/^-1[.,]2/);
     });
 });
 

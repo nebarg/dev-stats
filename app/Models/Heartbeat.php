@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property string $entity
  * @property string $entity_type
+ * @property string|null $entity_class
  * @property string|null $category
  * @property string|null $project
  * @property string|null $branch
@@ -42,7 +43,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  */
 #[Fillable([
-    'user_id', 'entity', 'entity_type', 'category', 'project',
+    'user_id', 'entity', 'entity_type', 'entity_class', 'category', 'project',
     'branch', 'language', 'dependencies', 'is_write', 'line_count', 'line_number', 'cursor_position',
     'project_root_count', 'editor', 'operating_system', 'machine', 'user_agent',
     'ai_line_changes', 'human_line_changes', 'ai_session', 'ai_subscription_plan',

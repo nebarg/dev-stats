@@ -4,6 +4,7 @@ namespace App\Actions\Heartbeats;
 
 use App\Models\Heartbeat;
 use App\Models\User;
+use App\Support\EntityClassifier;
 use App\Support\UserAgentParser;
 use Illuminate\Support\Facades\Date;
 
@@ -81,6 +82,7 @@ class StoreHeartbeats
             'user_id' => $context->user->id,
             'entity' => $entity,
             'entity_type' => $type,
+            'entity_class' => EntityClassifier::classify($entity, $type),
             'category' => self::category($payload->value('category'), $isBrowser, $language),
             'project' => self::resolve($payload->value('project'), $context->latest?->project, $isBrowser),
             'branch' => self::resolve($payload->value('branch'), $context->latest?->branch, $isBrowser),

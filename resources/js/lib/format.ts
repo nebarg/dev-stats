@@ -34,6 +34,16 @@ export function formatDuration(seconds: number): string {
     return parts.length > 0 ? parts.join(' ') : '<1 min';
 }
 
+/**
+ * Compact "4.8K" / "63.1M" rendering for large counts (lines, tokens).
+ */
+export function formatCompactNumber(value: number): string {
+    return new Intl.NumberFormat(undefined, {
+        notation: 'compact',
+        maximumFractionDigits: 1,
+    }).format(value);
+}
+
 function toLocalDate(date: string): Date {
     const [year, month, day] = date.split('-').map(Number);
 

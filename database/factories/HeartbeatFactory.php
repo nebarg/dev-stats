@@ -21,6 +21,7 @@ class HeartbeatFactory extends Factory
             'user_id' => User::factory(),
             'entity' => '/Users/dev/code/'.fake()->word().'/'.fake()->word().'.php',
             'entity_type' => 'file',
+            'entity_class' => 'source',
             'category' => 'coding',
             'project' => fake()->word(),
             'branch' => fake()->randomElement(['main', 'develop', 'feature/x']),
