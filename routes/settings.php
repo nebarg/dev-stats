@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Settings\ApiKeyController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\TrackingController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +26,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
+
+    Route::get('settings/tracking', [TrackingController::class, 'edit'])->name('tracking.edit');
+    Route::patch('settings/tracking', [TrackingController::class, 'update'])->name('tracking.update');
+    Route::put('settings/api-key', [ApiKeyController::class, 'update'])->name('api-key.update');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

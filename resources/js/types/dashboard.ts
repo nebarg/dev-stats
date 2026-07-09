@@ -46,6 +46,36 @@ export type StreakStats = {
     longest_days: number;
 };
 
+export type FileStats = {
+    key: string;
+    path: string;
+    seconds: number;
+    ai_lines: number;
+    human_lines: number;
+};
+
+export type ProjectStats = {
+    project: string;
+    range: string;
+    ranges: string[];
+    from: string;
+    to: string;
+    total_seconds: number;
+    today_seconds: number;
+    daily_average_seconds: number;
+    active_days: number;
+    most_active_day: { date: string; seconds: number } | null;
+    activity: ActivityDay[];
+    files: FileStats[];
+    file_count: number;
+    breakdowns: {
+        languages: BreakdownItem[];
+        branches: BreakdownItem[];
+        editors: BreakdownItem[];
+        categories: BreakdownItem[];
+    };
+};
+
 export type DashboardStats = {
     range: string;
     ranges: string[];

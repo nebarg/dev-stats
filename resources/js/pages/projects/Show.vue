@@ -1,32 +1,38 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, setLayoutProps } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import ActivityChart from '@/components/dashboard/ActivityChart.vue';
-import AgentsCard from '@/components/dashboard/AgentsCard.vue';
-import AiCodingCard from '@/components/dashboard/AiCodingCard.vue';
 import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
-import EditingCard from '@/components/dashboard/EditingCard.vue';
+import FilesCard from '@/components/dashboard/FilesCard.vue';
 import RangeSelector from '@/components/dashboard/RangeSelector.vue';
 import StatCard from '@/components/dashboard/StatCard.vue';
 import { formatDayLabel, formatDuration, pluralise } from '@/lib/format';
 import { dashboard } from '@/routes';
-import { show as showProject } from '@/routes/projects';
-import type { DashboardStats } from '@/types';
+import { show } from '@/routes/projects';
+import type { ProjectStats } from '@/types';
 
 const props = defineProps<{
-    stats: DashboardStats;
+    stats: ProjectStats;
 }>();
 
-defineOptions({
-    layout: {
-        breadcrumbs: [
-            {
-                title: 'Dashboard',
-                href: dashboard(),
-            },
-        ],
-    },
+setLayoutProps({
+    breadcrumbs: [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+        },
+        {
+            title: props.stats.project,
+            href: show(encodeURIComponent(props.stats.project)),
+        },
+    ],
 });
+
+function rangeUrl(range: string): string {
+    return show.url(encodeURIComponent(props.stats.project), {
+        query: { range },
+    });
+}
 
 const dailyAverageHint = computed(() => {
     const days = props.stats.active_days;
@@ -35,39 +41,21 @@ const dailyAverageHint = computed(() => {
 });
 
 const mostActive = computed(() => props.stats.most_active_day);
-
-const deepWorkHint = computed(() => {
-    const blocks = props.stats.focus.deep_work_blocks;
-
-    return `${blocks} ${pluralise(blocks, 'block')} of 25 min+`;
-});
-
-const streakValue = computed(() => {
-    const days = props.stats.streak.current_days;
-
-    return `${days} ${pluralise(days, 'day')}`;
-});
-
-const streakHint = computed(() => {
-    const days = props.stats.streak.longest_days;
-
-    return `longest ${days} ${pluralise(days, 'day')}`;
-});
 </script>
 
 <template>
-    <Head title="Dashboard" />
+    <Head :title="stats.project" />
 
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-xl font-semibold tracking-tight">
-                Coding activity
+                {{ stats.project }}
             </h1>
 
             <RangeSelector
                 :ranges="stats.ranges"
                 :current="stats.range"
-                :url="(range) => dashboard.url({ query: { range } })"
+                :url="rangeUrl"
             />
         </div>
 
@@ -94,50 +82,29 @@ const streakHint = computed(() => {
                         : 'No activity yet'
                 "
             />
-            <StatCard
-                label="Longest block"
-                :value="formatDuration(stats.focus.longest_block_seconds)"
-                hint="uninterrupted coding"
-            />
-            <StatCard
-                label="Deep work"
-                :value="formatDuration(stats.focus.deep_work_seconds)"
-                :hint="deepWorkHint"
-            />
-            <StatCard
-                label="Context switches"
-                :value="String(stats.focus.context_switches)"
-                hint="project hops mid-flow"
-            />
-            <StatCard label="Streak" :value="streakValue" :hint="streakHint" />
         </div>
 
         <ActivityChart :data="stats.activity" />
 
-        <AiCodingCard :ai="stats.ai" />
-
-        <EditingCard :editing="stats.editing" />
-
         <div class="grid gap-4 md:grid-cols-2">
-            <BreakdownCard
-                title="Projects"
-                :items="stats.breakdowns.projects"
-                :item-url="(key) => showProject.url(encodeURIComponent(key))"
+            <FilesCard
+                class="md:col-span-2"
+                :files="stats.files"
+                :file-count="stats.file_count"
             />
             <BreakdownCard
                 title="Languages"
                 :items="stats.breakdowns.languages"
             />
-            <BreakdownCard title="Editors" :items="stats.breakdowns.editors" />
             <BreakdownCard
-                title="Operating systems"
-                :items="stats.breakdowns.operating_systems"
+                title="Branches"
+                :items="stats.breakdowns.branches"
             />
+            <BreakdownCard title="Editors" :items="stats.breakdowns.editors" />
             <BreakdownCard
                 title="Categories"
                 :items="stats.breakdowns.categories"
             />
-            <AgentsCard :agents="stats.ai.agents" />
         </div>
     </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDuration } from '@/lib/format';
@@ -7,6 +8,7 @@ import type { BreakdownItem } from '@/types';
 const props = defineProps<{
     title: string;
     items: BreakdownItem[];
+    itemUrl?: (key: string) => string;
 }>();
 
 const max = computed(() =>
@@ -36,7 +38,14 @@ function width(seconds: number): string {
                     <div
                         class="flex items-center justify-between gap-2 text-sm"
                     >
-                        <span class="truncate">{{ item.key }}</span>
+                        <Link
+                            v-if="itemUrl"
+                            :href="itemUrl(item.key)"
+                            class="truncate hover:underline"
+                        >
+                            {{ item.key }}
+                        </Link>
+                        <span v-else class="truncate">{{ item.key }}</span>
                         <span
                             class="shrink-0 text-muted-foreground tabular-nums"
                         >
