@@ -46,6 +46,44 @@ export type StreakStats = {
     longest_days: number;
 };
 
+export type CalendarHeatmapDay = {
+    date: string;
+    level: number;
+    title: string;
+};
+
+export type AiCalendarDay = {
+    date: string;
+    ai_lines: number;
+    human_lines: number;
+};
+
+export type WeekdayAverage = {
+    label: string;
+    average_seconds: number;
+    ai_average_seconds: number;
+};
+
+export type LineTotals = {
+    key: string;
+    ai_lines: number;
+    human_lines: number;
+    path?: string;
+    project?: string | null;
+};
+
+export type InsightsStats = {
+    from: string;
+    to: string;
+    calendar: ActivityDay[];
+    ai_calendar: AiCalendarDay[];
+    weekdays: WeekdayAverage[];
+    top_ai_projects: LineTotals[];
+    top_human_projects: LineTotals[];
+    top_ai_files: LineTotals[];
+    top_human_files: LineTotals[];
+};
+
 export type FileStats = {
     key: string;
     path: string;
