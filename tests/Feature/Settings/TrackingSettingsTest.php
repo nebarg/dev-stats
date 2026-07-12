@@ -2,6 +2,7 @@
 
 use App\Models\Duration;
 use App\Models\Heartbeat;
+use App\Models\SummaryItem;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -76,6 +77,38 @@ test('changing the timeout regenerates durations from heartbeats', function () {
 
     expect(Duration::query()->where('user_id', $user->id)->pluck('timeout_seconds')->all())
         ->toBe([300]);
+});
+
+test('changing the timezone wipes and rebuilds stored summaries', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-06-30 12:00:00', 'UTC'));
+    $user = User::factory()->create(['timezone' => 'UTC']);
+
+    Heartbeat::factory()->forUser($user)->create([
+        'recorded_at' => CarbonImmutable::parse('2026-06-29 10:00:00', 'UTC'),
+        'project' => 'app',
+    ]);
+
+    // A stale row bucketed under the old timezone; a rebuild never produces
+    // this key.
+    SummaryItem::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-29',
+        'type' => 'project',
+        'key' => 'stale',
+        'total_seconds' => 123,
+    ]);
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    $this->actingAs($user)->patch(route('tracking.update'), [
+        'timezone' => 'Pacific/Auckland',
+        'heartbeat_timeout_sec' => $user->heartbeat_timeout_sec,
+    ]);
+
+    $keys = SummaryItem::query()->where('user_id', $user->id)->where('type', 'project')->pluck('key');
+
+    expect($keys->all())->toBe(['app'])
+        ->and($user->fresh()->summaries_generated_until->toDateString())->toBe('2026-06-30');
 });
 
 test('an unchanged submission leaves durations untouched', function () {

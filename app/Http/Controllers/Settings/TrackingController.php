@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Actions\Durations\GenerateDurations;
+use App\Actions\Summaries\GenerateSummaries;
+use App\Actions\Summaries\InvalidateSummaries;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\TrackingUpdateRequest;
 use App\Models\User;
@@ -37,13 +39,16 @@ class TrackingController extends Controller
         $user->fill($request->validated());
 
         // Both settings shape sessionization (timeout caps gaps, timezone sets
-        // day boundaries), so stored durations go stale when either changes.
+        // day boundaries), so stored durations and the summaries rolled up
+        // from them go stale when either changes.
         $isRegenerationNeeded = $user->isDirty(['timezone', 'heartbeat_timeout_sec']);
 
         $user->save();
 
         if ($isRegenerationNeeded) {
+            InvalidateSummaries::all($user);
             GenerateDurations::forUser($user);
+            GenerateSummaries::forUser($user);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Tracking settings updated.')]);

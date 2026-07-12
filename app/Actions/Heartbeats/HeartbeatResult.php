@@ -5,8 +5,8 @@ namespace App\Actions\Heartbeats;
 use App\Models\Heartbeat;
 
 /**
- * The outcome of storing a single heartbeat: the wakatime response body and
- * whether the heartbeat was stored.
+ * The outcome of storing a single heartbeat: the wakatime response body,
+ * whether the heartbeat was stored, and the stored model itself.
  */
 readonly class HeartbeatResult
 {
@@ -16,6 +16,7 @@ readonly class HeartbeatResult
     private function __construct(
         public array $body,
         private bool $isSuccessful,
+        public ?Heartbeat $heartbeat = null,
     ) {}
 
     public static function created(Heartbeat $heartbeat, float $time): self
@@ -27,7 +28,7 @@ readonly class HeartbeatResult
                 'type' => $heartbeat->entity_type,
                 'time' => $time,
             ],
-        ], true);
+        ], true, $heartbeat);
     }
 
     public static function rejected(string $error, ?string $entity = null): self

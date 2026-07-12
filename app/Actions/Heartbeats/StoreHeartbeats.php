@@ -2,10 +2,12 @@
 
 namespace App\Actions\Heartbeats;
 
+use App\Actions\Summaries\InvalidateSummaries;
 use App\Models\Heartbeat;
 use App\Models\User;
 use App\Support\EntityClassifier;
 use App\Support\UserAgentParser;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 
 /**
@@ -36,10 +38,49 @@ class StoreHeartbeats
             machine: $machine,
         );
 
-        return array_map(
+        $results = array_map(
             static fn (mixed $raw): HeartbeatResult => self::store($context, $raw),
             $rawHeartbeats,
         );
+
+        self::invalidateStaleSummaries($user, $results);
+
+        return $results;
+    }
+
+    /**
+     * The CLI's offline queue delivers heartbeats late and out of order, so a
+     * new heartbeat can land on an already-summarised day. Its stored
+     * summaries are stale from that day on; discard them for regeneration.
+     * Duplicates change nothing and don't invalidate.
+     *
+     * @param  array<int, HeartbeatResult>  $results
+     */
+    private static function invalidateStaleSummaries(User $user, array $results): void
+    {
+        if ($user->summaries_generated_until === null) {
+            return;
+        }
+
+        $earliest = null;
+
+        foreach ($results as $result) {
+            if ($result->heartbeat?->wasRecentlyCreated !== true) {
+                continue;
+            }
+
+            if ($earliest === null || $result->heartbeat->recorded_at->lessThan($earliest)) {
+                $earliest = $result->heartbeat->recorded_at;
+            }
+        }
+
+        if ($earliest === null) {
+            return;
+        }
+
+        $day = CarbonImmutable::parse($earliest->setTimezone($user->timezone)->toDateString());
+
+        InvalidateSummaries::fromDay($user, $day);
     }
 
     private static function store(HeartbeatContext $context, mixed $raw): HeartbeatResult
