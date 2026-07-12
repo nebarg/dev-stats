@@ -21,6 +21,7 @@ export type AgentStats = {
     input_tokens: number;
     output_tokens: number;
     sessions: number;
+    cost_cents: number | null;
 };
 
 export type AiStats = {
@@ -31,6 +32,7 @@ export type AiStats = {
     sessions: number;
     prompts: number;
     avg_prompt_length: number;
+    estimated_cost_cents: number | null;
     agents: AgentStats[];
 };
 

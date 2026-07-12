@@ -172,6 +172,7 @@ test('it sums ai line and token totals from heartbeats in range', function () {
         'sessions' => 0,
         'prompts' => 0,
         'avg_prompt_length' => 0,
+        'estimated_cost_cents' => null,
         'agents' => [],
     ]);
 });
@@ -205,6 +206,10 @@ test('it counts ai sessions and prompt events', function () {
 });
 
 test('it breaks down ai activity by agent model from the user agent', function () {
+    // Fixed prices so assertions don't track the shipped defaults; gpt-5 is
+    // deliberately unpriced.
+    config(['ai-pricing.models' => ['opus' => ['input' => 1000.0, 'output' => 2000.0]]]);
+
     $user = User::factory()->create();
 
     Heartbeat::factory()->forUser($user)->create([
@@ -237,12 +242,15 @@ test('it breaks down ai activity by agent model from the user agent', function (
         'ai_line_changes' => 999,
     ]);
 
-    $agents = BuildDashboardStats::forUser($user, '7d')['ai']['agents'];
+    $ai = BuildDashboardStats::forUser($user, '7d')['ai'];
 
-    expect($agents)->toBe([
-        ['key' => 'opus/4.1-medium', 'lines' => 150, 'input_tokens' => 1000, 'output_tokens' => 100, 'sessions' => 1],
-        ['key' => 'gpt-5/high', 'lines' => 40, 'input_tokens' => 0, 'output_tokens' => 0, 'sessions' => 1],
-    ]);
+    // Opus: (1000 in × $1000/M) + (100 out × $2000/M) = $1.20. The unpriced
+    // gpt-5 agent carries no cost and stays out of the total — unknown
+    // isn't free.
+    expect($ai['agents'])->toBe([
+        ['key' => 'opus/4.1-medium', 'lines' => 150, 'input_tokens' => 1000, 'output_tokens' => 100, 'sessions' => 1, 'cost_cents' => 120],
+        ['key' => 'gpt-5/high', 'lines' => 40, 'input_tokens' => 0, 'output_tokens' => 0, 'sessions' => 1, 'cost_cents' => null],
+    ])->and($ai['estimated_cost_cents'])->toBe(120);
 });
 
 test('it returns zeroed ai totals with no heartbeats', function () {
@@ -256,6 +264,7 @@ test('it returns zeroed ai totals with no heartbeats', function () {
         'sessions' => 0,
         'prompts' => 0,
         'avg_prompt_length' => 0,
+        'estimated_cost_cents' => null,
         'agents' => [],
     ]);
 });

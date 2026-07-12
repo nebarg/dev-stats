@@ -7,6 +7,7 @@ use App\Actions\Stats\Concerns\ReadsSummaries;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
+use App\Support\AiPricing;
 use App\Support\UserAgentParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -71,6 +72,7 @@ class BuildDashboardStats
         $total = array_sum($perDay);
         $activeDays = count($perDay);
         $mostActive = self::mostActiveDay($perDay);
+        $agents = self::agents($user, $from, $today);
 
         return [
             'range' => $range,
@@ -88,7 +90,8 @@ class BuildDashboardStats
             'editing' => self::editing($user, $from, $today),
             'ai' => [
                 ...self::aiTotals($user, $from, $today),
-                'agents' => self::agents($user, $from, $today),
+                'estimated_cost_cents' => self::estimatedCost($agents),
+                'agents' => array_slice($agents, 0, self::BREAKDOWN_LIMIT),
             ],
             'breakdowns' => [
                 'projects' => $breakdown('project', 'No project'),
@@ -310,11 +313,14 @@ class BuildDashboardStats
 
     /**
      * Per-AI-agent totals, keyed by the model token parsed from each AI
-     * heartbeat's User-Agent. Heartbeats whose UA carries no model (e.g. AI
-     * activity relayed under an editor plugin's UA) are omitted rather than
-     * misattributed. Aggregated per distinct UA in SQL, then merged by model.
+     * heartbeat's User-Agent, with the estimated spend of each agent's
+     * tokens. Heartbeats whose UA carries no model (e.g. AI activity relayed
+     * under an editor plugin's UA) are omitted rather than misattributed.
+     * Aggregated per distinct UA in SQL, then merged by model. Returns every
+     * agent — display limiting is the caller's concern, so spend totals
+     * cover them all.
      *
-     * @return array<int, array{key: string, lines: int, input_tokens: int, output_tokens: int, sessions: int}>
+     * @return array<int, array{key: string, lines: int, input_tokens: int, output_tokens: int, sessions: int, cost_cents: int|null}>
      */
     private static function agents(User $user, CarbonImmutable $from, CarbonImmutable $today): array
     {
@@ -357,9 +363,25 @@ class BuildDashboardStats
         }
 
         return collect($agents)
+            ->map(static fn (array $agent): array => [
+                ...$agent,
+                'cost_cents' => AiPricing::costInCents($agent['key'], $agent['input_tokens'], $agent['output_tokens']),
+            ])
             ->sortByDesc('lines')
-            ->take(self::BREAKDOWN_LIMIT)
             ->values()
             ->all();
+    }
+
+    /**
+     * Total estimated spend across the priced agents, or null when no agent
+     * has a price — unknown must not render as free.
+     *
+     * @param  array<int, array{cost_cents: int|null, ...}>  $agents
+     */
+    private static function estimatedCost(array $agents): ?int
+    {
+        $costs = array_filter(array_column($agents, 'cost_cents'), static fn (?int $cost): bool => $cost !== null);
+
+        return $costs === [] ? null : array_sum($costs);
     }
 }

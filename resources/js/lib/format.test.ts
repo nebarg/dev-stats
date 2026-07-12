@@ -3,6 +3,7 @@ import {
     formatCompactNumber,
     formatDayLabel,
     formatDuration,
+    formatUsd,
     formatWeekday,
     pluralise,
 } from '@/lib/format';
@@ -45,6 +46,17 @@ describe('formatDuration', () => {
 
     it('omits a unit that is zero', () => {
         expect(formatDuration(2 * 3600)).toBe('2 hrs');
+    });
+});
+
+describe('formatUsd', () => {
+    it('renders cents as dollars with two decimal places', () => {
+        expect(formatUsd(4765)).toBe('$47.65');
+        expect(formatUsd(5)).toBe('$0.05');
+    });
+
+    it('groups thousands', () => {
+        expect(formatUsd(123456789)).toBe('$1,234,567.89');
     });
 });
 

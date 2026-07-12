@@ -35,6 +35,16 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * "$47.65" from an amount in US cents (AI spend estimates are priced in USD).
+ */
+export function formatUsd(cents: number): string {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+    }).format(cents / 100);
+}
+
+/**
  * Compact "4.8K" / "63.1M" rendering for large counts (lines, tokens).
  */
 export function formatCompactNumber(value: number): string {

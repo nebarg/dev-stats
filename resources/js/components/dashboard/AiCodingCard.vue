@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatCompactNumber, pluralise } from '@/lib/format';
+import { formatCompactNumber, formatUsd, pluralise } from '@/lib/format';
 import type { AiStats } from '@/types';
 
 const props = defineProps<{
@@ -33,6 +33,18 @@ const tiles = computed<Tile[]>(() => {
     const ai = props.ai;
     const promptsPerSession =
         ai.sessions > 0 ? Math.round(ai.prompts / ai.sessions) : 0;
+
+    // Spend only exists when a priced model was seen — unknown isn't free.
+    const spend: Tile[] =
+        ai.estimated_cost_cents !== null
+            ? [
+                  {
+                      label: 'Est. spend',
+                      value: formatUsd(ai.estimated_cost_cents),
+                      hint: 'tokens × price map',
+                  },
+              ]
+            : [];
 
     return [
         {
@@ -72,6 +84,7 @@ const tiles = computed<Tile[]>(() => {
                     ? `~${formatCompactNumber(ai.avg_prompt_length)} chars avg`
                     : undefined,
         },
+        ...spend,
     ];
 });
 </script>

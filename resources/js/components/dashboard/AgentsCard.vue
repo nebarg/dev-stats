@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatCompactNumber, pluralise } from '@/lib/format';
+import { formatCompactNumber, formatUsd, pluralise } from '@/lib/format';
 import type { AgentStats } from '@/types';
 
 const props = defineProps<{
@@ -18,8 +18,16 @@ function width(lines: number): string {
 
 function detail(agent: AgentStats): string {
     const tokens = agent.input_tokens + agent.output_tokens;
+    const parts = [
+        `${formatCompactNumber(tokens)} tokens`,
+        `${agent.sessions} ${pluralise(agent.sessions, 'session')}`,
+    ];
 
-    return `${formatCompactNumber(tokens)} tokens · ${agent.sessions} ${pluralise(agent.sessions, 'session')}`;
+    if (agent.cost_cents !== null) {
+        parts.push(`~${formatUsd(agent.cost_cents)}`);
+    }
+
+    return parts.join(' · ');
 }
 </script>
 
