@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -24,6 +25,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $timezone
  * @property int $start_of_week
  * @property int $heartbeat_timeout_sec
+ * @property CarbonImmutable|null $summaries_generated_until
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $two_factor_secret
@@ -73,6 +75,22 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * @return HasMany<SummaryItem, $this>
+     */
+    public function summaryItems(): HasMany
+    {
+        return $this->hasMany(SummaryItem::class);
+    }
+
+    /**
+     * @return HasMany<DailyMetric, $this>
+     */
+    public function dailyMetrics(): HasMany
+    {
+        return $this->hasMany(DailyMetric::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -83,6 +101,7 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'start_of_week' => 'integer',
             'heartbeat_timeout_sec' => 'integer',
+            'summaries_generated_until' => 'immutable_date',
         ];
     }
 }
