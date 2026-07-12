@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\AiPricingController;
 use App\Http\Controllers\Settings\ApiKeyController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -30,6 +31,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/tracking', [TrackingController::class, 'edit'])->name('tracking.edit');
     Route::patch('settings/tracking', [TrackingController::class, 'update'])->name('tracking.update');
     Route::put('settings/api-key', [ApiKeyController::class, 'update'])->name('api-key.update');
+
+    Route::get('settings/ai-pricing', [AiPricingController::class, 'edit'])->name('ai-pricing.edit');
+    Route::post('settings/ai-pricing', [AiPricingController::class, 'store'])->name('ai-pricing.store');
+    Route::patch('settings/ai-pricing/{price}', [AiPricingController::class, 'update'])->name('ai-pricing.update');
+    Route::delete('settings/ai-pricing/{price}', [AiPricingController::class, 'destroy'])->name('ai-pricing.destroy');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {
