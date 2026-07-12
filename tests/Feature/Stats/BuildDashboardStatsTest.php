@@ -3,6 +3,7 @@
 use App\Actions\Stats\BuildDashboardStats;
 use App\Models\Duration;
 use App\Models\Heartbeat;
+use App\Models\SummaryItem;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 
@@ -348,6 +349,80 @@ test('it keeps a streak alive on a quiet today and ignores days under the floor'
     expect(BuildDashboardStats::forUser($user, '7d')['streak'])->toBe([
         'current_days' => 2,
         'longest_days' => 2,
+    ]);
+});
+
+test('it reads stored summaries for covered days and live durations beyond them', function () {
+    $user = User::factory()->create();
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    SummaryItem::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-28',
+        'type' => 'project',
+        'key' => 'stored-app',
+        'total_seconds' => 1800,
+    ]);
+
+    // A duration on a covered day: the stored summary is authoritative, so
+    // this must not double-count.
+    makeDuration($user, CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'), 999);
+
+    makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 3600);
+
+    $stats = BuildDashboardStats::forUser($user, '7d');
+
+    expect($stats['total_seconds'])->toBe(5400)
+        ->and($stats['today_seconds'])->toBe(3600)
+        ->and(collect($stats['activity'])->firstWhere('date', '2026-06-28'))->toBe(['date' => '2026-06-28', 'seconds' => 1800])
+        ->and($stats['breakdowns']['projects'])->toBe([
+            ['key' => 'app', 'seconds' => 3600],
+            ['key' => 'stored-app', 'seconds' => 1800],
+        ]);
+});
+
+test('it merges stored and live totals for the same breakdown key', function () {
+    $user = User::factory()->create();
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    SummaryItem::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-29',
+        'type' => 'project',
+        'key' => 'app',
+        'total_seconds' => 600,
+    ]);
+
+    makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 900);
+
+    $stats = BuildDashboardStats::forUser($user, '7d');
+
+    expect($stats['total_seconds'])->toBe(1500)
+        ->and($stats['breakdowns']['projects'])->toBe([['key' => 'app', 'seconds' => 1500]]);
+});
+
+test('it computes streaks from stored summaries and live durations together', function () {
+    $user = User::factory()->create();
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    foreach (['2026-06-28', '2026-06-29'] as $day) {
+        SummaryItem::create([
+            'user_id' => $user->id,
+            'day' => $day,
+            'type' => 'project',
+            'key' => 'app',
+            'total_seconds' => 1200,
+        ]);
+    }
+
+    makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 1200);
+
+    expect(BuildDashboardStats::forUser($user, '7d')['streak'])->toBe([
+        'current_days' => 3,
+        'longest_days' => 3,
     ]);
 });
 

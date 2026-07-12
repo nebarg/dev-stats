@@ -1,8 +1,10 @@
 <?php
 
 use App\Actions\Stats\BuildInsightsStats;
+use App\Models\DailyMetric;
 use App\Models\Duration;
 use App\Models\Heartbeat;
+use App\Models\SummaryItem;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 
@@ -105,6 +107,75 @@ test('top projects rank by the requested line column with positives only', funct
     expect(array_column($stats['top_ai_projects'], 'key'))->toBe(['beta', 'alpha'])
         ->and(array_column($stats['top_human_projects'], 'key'))->toBe(['gamma', 'alpha'])
         ->and($stats['top_ai_projects'][0]['ai_lines'])->toBe(200);
+});
+
+test('covered days read stored summaries and the tail stays live', function () {
+    $user = User::factory()->create();
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    SummaryItem::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-29',
+        'type' => 'project',
+        'key' => 'app',
+        'total_seconds' => 600,
+    ]);
+    SummaryItem::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-29',
+        'type' => 'category',
+        'key' => 'ai coding',
+        'total_seconds' => 240,
+    ]);
+
+    // Ignored on a covered day: the stored rows are authoritative.
+    makeInsightsDuration($user, '2026-06-29 09:00:00', 9999);
+
+    makeInsightsDuration($user, '2026-06-30 09:00:00', 900, ['category' => 'ai coding']);
+
+    $stats = BuildInsightsStats::forUser($user);
+    $calendar = collect($stats['calendar'])->keyBy('date');
+    $weekdays = collect($stats['weekdays'])->keyBy('label');
+
+    // 2025-07-01..2026-06-30 holds 52 Mondays (the 29th) and 53 Tuesdays
+    // (the 30th; the window starts and ends on one).
+    expect($calendar['2026-06-29']['seconds'])->toBe(600)
+        ->and($calendar['2026-06-30']['seconds'])->toBe(900)
+        ->and($weekdays['Mon']['average_seconds'])->toBe(intdiv(600, 52))
+        ->and($weekdays['Mon']['ai_average_seconds'])->toBe(intdiv(240, 52))
+        ->and($weekdays['Tue']['average_seconds'])->toBe(intdiv(900, 53))
+        ->and($weekdays['Tue']['ai_average_seconds'])->toBe(intdiv(900, 53));
+});
+
+test('the ai calendar and top projects merge stored metrics with the live tail', function () {
+    $user = User::factory()->create();
+    $user->summaries_generated_until = '2026-06-29';
+    $user->save();
+
+    DailyMetric::create([
+        'user_id' => $user->id,
+        'day' => '2026-06-29',
+        'project' => 'alpha',
+        'editor' => 'claude',
+        'ai_lines' => 100,
+        'human_lines' => 20,
+    ]);
+
+    // Ignored on a covered day: metrics come from storage.
+    makeInsightsHeartbeat($user, '2026-06-29 09:00:00', ['project' => 'alpha', 'ai_line_changes' => 9999]);
+
+    makeInsightsHeartbeat($user, '2026-06-30 09:00:00', ['project' => 'alpha', 'ai_line_changes' => 40]);
+    makeInsightsHeartbeat($user, '2026-06-30 09:01:00', ['project' => 'beta', 'human_line_changes' => 10]);
+
+    $stats = BuildInsightsStats::forUser($user);
+    $days = collect($stats['ai_calendar'])->keyBy('date');
+
+    expect($days['2026-06-29'])->toBe(['date' => '2026-06-29', 'ai_lines' => 100, 'human_lines' => 20])
+        ->and($days['2026-06-30'])->toBe(['date' => '2026-06-30', 'ai_lines' => 40, 'human_lines' => 10])
+        ->and(collect($stats['top_ai_projects'])->firstWhere('key', 'alpha'))
+        ->toBe(['key' => 'alpha', 'ai_lines' => 140, 'human_lines' => 20])
+        ->and(array_column($stats['top_human_projects'], 'key'))->toBe(['alpha', 'beta']);
 });
 
 test('top files keep the full path and project behind a basename key', function () {

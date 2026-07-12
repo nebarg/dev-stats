@@ -3,6 +3,7 @@
 namespace App\Actions\Stats;
 
 use App\Actions\Stats\Concerns\AggregatesDurations;
+use App\Actions\Stats\Concerns\ReadsSummaries;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
@@ -11,12 +12,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Builds the dashboard view-model live for a given range: time stats from the
- * user's `durations`, AI line/token counts from raw `heartbeats`.
+ * Builds the dashboard view-model for a given range: time stats from stored
+ * daily summaries plus a live tail computed from `durations` (always
+ * including today), AI line/token counts from raw `heartbeats`.
  */
 class BuildDashboardStats
 {
     use AggregatesDurations;
+    use ReadsSummaries;
 
     /**
      * A focus block must reach this length to count as deep work.
@@ -40,8 +43,30 @@ class BuildDashboardStats
         $today = CarbonImmutable::now($timezone)->startOfDay();
         $from = self::rangeStart(Duration::query()->where('user_id', $user->id), $range, $today, $timezone);
 
+        $coveredUntil = self::summariesCoveredUntil($user, $today);
+        $hasStored = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from);
+        $liveFrom = $hasStored ? $coveredUntil->addDay() : $from;
+
+        // Focus needs every duration in range, so the full fetch stays; the
+        // other aggregates read stored summaries for covered days and use
+        // only the fetched durations beyond them.
         $durations = self::durations($user, $from, $today);
-        $perDay = self::secondsPerDay($durations, $timezone);
+        $liveDurations = $hasStored
+            ? $durations->filter(fn (Duration $duration): bool => $duration->started_at->greaterThanOrEqualTo($liveFrom))->values()
+            : $durations;
+
+        $perDay = self::mergeTotals(
+            $hasStored ? self::storedSecondsPerDay($user, $from, $coveredUntil) : [],
+            self::secondsPerDay($liveDurations, $timezone),
+        );
+
+        $breakdown = fn (string $type, string $emptyLabel): array => self::topBuckets(
+            self::mergeTotals(
+                $hasStored ? self::storedBucketTotals($user, $from, $coveredUntil, $type) : [],
+                self::durationTotals($liveDurations, $type),
+            ),
+            $emptyLabel,
+        );
 
         $total = array_sum($perDay);
         $activeDays = count($perDay);
@@ -59,18 +84,18 @@ class BuildDashboardStats
             'most_active_day' => $mostActive,
             'activity' => self::activity($perDay, $from, $today),
             'focus' => self::focus($durations),
-            'streak' => self::streak($user, $timezone, $today),
+            'streak' => self::streak($user, $timezone, $today, $coveredUntil),
             'editing' => self::editing($user, $from, $today),
             'ai' => [
                 ...self::aiTotals($user, $from, $today),
                 'agents' => self::agents($user, $from, $today),
             ],
             'breakdowns' => [
-                'projects' => self::breakdown($durations, 'project', 'No project'),
-                'languages' => self::breakdown($durations, 'language', 'AI Session'),
-                'editors' => self::breakdown($durations, 'editor', 'Unknown editor'),
-                'operating_systems' => self::breakdown($durations, 'operating_system', 'Unknown OS'),
-                'categories' => self::breakdown($durations, 'category', 'Uncategorised'),
+                'projects' => $breakdown('project', 'No project'),
+                'languages' => $breakdown('language', 'AI Session'),
+                'editors' => $breakdown('editor', 'Unknown editor'),
+                'operating_systems' => $breakdown('operating_system', 'Unknown OS'),
+                'categories' => $breakdown('category', 'Uncategorised'),
             ],
         ];
     }
@@ -165,19 +190,29 @@ class BuildDashboardStats
      * Streaks of consecutive days with at least STREAK_MINIMUM_SECONDS of
      * coding, computed over the last STREAK_WINDOW_DAYS regardless of the
      * selected range. A quiet today doesn't break the current streak — the
-     * day isn't over yet.
+     * day isn't over yet. Covered days come from stored summaries; only the
+     * uncovered tail touches durations.
      *
      * @return array{current_days: int, longest_days: int}
      */
-    private static function streak(User $user, string $timezone, CarbonImmutable $today): array
+    private static function streak(User $user, string $timezone, CarbonImmutable $today, ?CarbonImmutable $coveredUntil): array
     {
+        $windowStart = $today->subDays(self::STREAK_WINDOW_DAYS);
+        $hasStored = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($windowStart);
+        $liveFrom = $hasStored ? $coveredUntil->addDay() : $windowStart;
+
         $durations = Duration::query()
             ->where('user_id', $user->id)
-            ->where('started_at', '>=', $today->subDays(self::STREAK_WINDOW_DAYS)->setTimezone('UTC'))
+            ->where('started_at', '>=', $liveFrom->setTimezone('UTC'))
             ->get(['started_at', 'duration_seconds']);
 
-        $activeDays = array_keys(array_filter(
+        $perDay = self::mergeTotals(
+            $hasStored ? self::storedSecondsPerDay($user, $windowStart, $coveredUntil) : [],
             self::secondsPerDay($durations, $timezone),
+        );
+
+        $activeDays = array_keys(array_filter(
+            $perDay,
             static fn (int $seconds): bool => $seconds >= self::STREAK_MINIMUM_SECONDS,
         ));
         sort($activeDays);

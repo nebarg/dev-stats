@@ -3,22 +3,28 @@
 namespace App\Actions\Stats;
 
 use App\Actions\Stats\Concerns\AggregatesDurations;
+use App\Actions\Stats\Concerns\ReadsSummaries;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Builds the insights view-model over a fixed trailing year: calendar heatmaps
  * (coding time and AI share per day), weekday averages with an AI-time
  * portion, and authorship rankings (top AI-assisted / human-edited projects
  * and files by net line changes).
+ *
+ * Covered past days read the stored `summary_items`/`daily_metrics`; the
+ * uncovered tail (always including today) is computed live and merged. File
+ * rankings stay fully live — per-file detail is deliberately not
+ * pre-aggregated.
  */
 class BuildInsightsStats
 {
     use AggregatesDurations;
+    use ReadsSummaries;
 
     private const int WINDOW_DAYS = 365;
 
@@ -38,21 +44,38 @@ class BuildInsightsStats
         $today = CarbonImmutable::now($timezone)->startOfDay();
         $from = $today->subDays(self::WINDOW_DAYS - 1);
 
-        $durations = Duration::query()
+        $coveredUntil = self::summariesCoveredUntil($user, $today);
+        $storedUntil = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from) ? $coveredUntil : null;
+        $liveFrom = $storedUntil !== null ? $storedUntil->addDay() : $from;
+
+        $liveDurations = Duration::query()
             ->where('user_id', $user->id)
-            ->where('started_at', '>=', $from->setTimezone('UTC'))
+            ->where('started_at', '>=', $liveFrom->setTimezone('UTC'))
             ->where('started_at', '<', $today->addDay()->setTimezone('UTC'))
             ->get(['started_at', 'duration_seconds', 'category']);
 
-        $projectTotals = self::lineTotals($user, $from, $today, 'project');
-        $fileTotals = self::lineTotals($user, $from, $today, 'entity');
+        $perDay = self::mergeTotals(
+            $storedUntil !== null ? self::storedSecondsPerDay($user, $from, $storedUntil) : [],
+            self::secondsPerDay($liveDurations, $timezone),
+        );
+
+        $aiPerDay = self::mergeTotals(
+            $storedUntil !== null ? self::storedCategorySecondsPerDay($user, $from, $storedUntil, 'ai coding') : [],
+            self::secondsPerDay(
+                $liveDurations->filter(static fn (Duration $duration): bool => $duration->category === 'ai coding'),
+                $timezone,
+            ),
+        );
+
+        $projectTotals = self::projectLineTotals($user, $from, $storedUntil, $liveFrom, $today);
+        $fileTotals = self::fileLineTotals($user, $from, $today);
 
         return [
             'from' => $from->toDateString(),
             'to' => $today->toDateString(),
-            'calendar' => self::activity(self::secondsPerDay($durations, $timezone), $from, $today),
-            'ai_calendar' => self::aiCalendar($user, $from, $today, $timezone),
-            'weekdays' => self::weekdayAverages($durations, $timezone, $from, $today),
+            'calendar' => self::activity($perDay, $from, $today),
+            'ai_calendar' => self::aiCalendar($user, $from, $storedUntil, $liveFrom, $today, $timezone),
+            'weekdays' => self::weekdayAverages($perDay, $aiPerDay, $from, $today),
             'top_ai_projects' => self::top($projectTotals, 'ai_lines'),
             'top_human_projects' => self::top($projectTotals, 'human_lines'),
             'top_ai_files' => self::top($fileTotals, 'ai_lines'),
@@ -61,16 +84,18 @@ class BuildInsightsStats
     }
 
     /**
-     * Net AI and human line changes per day, for the AI-share calendar. Days
-     * without line data are present with zeros so the grid stays continuous.
+     * Net AI and human line changes per day, for the AI-share calendar:
+     * stored daily metrics for covered days, heartbeats for the live tail.
+     * Days without line data are present with zeros so the grid stays
+     * continuous.
      *
      * @return array<int, array{date: string, ai_lines: int, human_lines: int}>
      */
-    private static function aiCalendar(User $user, CarbonImmutable $from, CarbonImmutable $today, string $timezone): array
+    private static function aiCalendar(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $today, string $timezone): array
     {
-        $perDay = [];
+        $perDay = $storedUntil !== null ? self::storedLinesPerDay($user, $from, $storedUntil) : [];
 
-        $heartbeats = self::lineHeartbeats($user, $from, $today)
+        $heartbeats = self::lineHeartbeats($user, $liveFrom, $today)
             ->select(['recorded_at', 'ai_line_changes', 'human_line_changes'])
             ->lazy();
 
@@ -101,26 +126,23 @@ class BuildInsightsStats
      * by how often it occurs in the window — with the `ai coding` share broken
      * out so the bars can stack an AI portion.
      *
-     * @param  Collection<int, Duration>  $durations
+     * @param  array<string, int>  $perDay
+     * @param  array<string, int>  $aiPerDay
      * @return array<int, array{label: string, average_seconds: int, ai_average_seconds: int}>
      */
-    private static function weekdayAverages(Collection $durations, string $timezone, CarbonImmutable $from, CarbonImmutable $today): array
+    private static function weekdayAverages(array $perDay, array $aiPerDay, CarbonImmutable $from, CarbonImmutable $today): array
     {
         $totals = array_fill(1, 7, 0);
         $aiTotals = array_fill(1, 7, 0);
         $occurrences = array_fill(1, 7, 0);
 
         for ($day = $from; $day <= $today; $day = $day->addDay()) {
-            $occurrences[$day->dayOfWeekIso]++;
-        }
+            $weekday = $day->dayOfWeekIso;
+            $date = $day->toDateString();
 
-        foreach ($durations as $duration) {
-            $weekday = $duration->started_at->setTimezone($timezone)->dayOfWeekIso;
-            $totals[$weekday] += $duration->duration_seconds;
-
-            if ($duration->category === 'ai coding') {
-                $aiTotals[$weekday] += $duration->duration_seconds;
-            }
+            $occurrences[$weekday]++;
+            $totals[$weekday] += $perDay[$date] ?? 0;
+            $aiTotals[$weekday] += $aiPerDay[$date] ?? 0;
         }
 
         return collect(self::WEEKDAY_LABELS)
@@ -134,37 +156,67 @@ class BuildInsightsStats
     }
 
     /**
-     * Net line changes grouped by one heartbeat column. File rows keep the
-     * full path and project alongside a basename display key.
+     * Net line changes per project: stored daily metrics for covered days
+     * plus the live heartbeat tail, merged by project.
+     *
+     * @return array<int, array{key: string, ai_lines: int, human_lines: int}>
+     */
+    private static function projectLineTotals(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $today): array
+    {
+        $totals = $storedUntil !== null ? self::storedProjectLineTotals($user, $from, $storedUntil) : [];
+
+        $rows = self::lineHeartbeats($user, $liveFrom, $today)
+            ->groupBy('project')
+            ->select('project')
+            ->selectRaw(
+                'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                .'COALESCE(SUM(human_line_changes), 0) AS human_lines'
+            )
+            ->get();
+
+        foreach ($rows as $row) {
+            $bucket = $totals[$row->project ?? ''] ?? ['ai_lines' => 0, 'human_lines' => 0];
+            $bucket['ai_lines'] += (int) $row->ai_lines;
+            $bucket['human_lines'] += (int) $row->human_lines;
+            $totals[$row->project ?? ''] = $bucket;
+        }
+
+        return collect($totals)
+            ->map(static fn (array $bucket, string|int $project): array => [
+                'key' => $project === '' ? 'No project' : (string) $project,
+                'ai_lines' => $bucket['ai_lines'],
+                'human_lines' => $bucket['human_lines'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Net line changes per file over the whole window, live from heartbeats.
+     * Rows keep the full path and project alongside a basename display key.
      *
      * @return array<int, array<string, mixed>>
      */
-    private static function lineTotals(User $user, CarbonImmutable $from, CarbonImmutable $today, string $column): array
+    private static function fileLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $today): array
     {
-        $isFileRanking = $column === 'entity';
-
         $rows = self::lineHeartbeats($user, $from, $today)
-            ->when($isFileRanking, static fn (Builder $query) => $query->where('entity_type', 'file'))
-            ->groupBy($isFileRanking ? ['entity', 'project'] : [$column])
+            ->where('entity_type', 'file')
+            ->groupBy(['entity', 'project'])
+            ->select(['entity', 'project'])
             ->selectRaw(
-                ($isFileRanking ? 'entity, project, ' : "{$column}, ")
-                .'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
                 .'COALESCE(SUM(human_line_changes), 0) AS human_lines'
             )
             ->get();
 
         return $rows
-            ->map(static function ($row) use ($column, $isFileRanking): array {
-                $totals = [
-                    'key' => $isFileRanking ? basename($row->entity) : ($row->{$column} ?? 'No project'),
-                    'ai_lines' => (int) $row->ai_lines,
-                    'human_lines' => (int) $row->human_lines,
-                ];
-
-                return $isFileRanking
-                    ? [...$totals, 'path' => $row->entity, 'project' => $row->project]
-                    : $totals;
-            })
+            ->map(static fn ($row): array => [
+                'key' => basename($row->entity),
+                'ai_lines' => (int) $row->ai_lines,
+                'human_lines' => (int) $row->human_lines,
+                'path' => $row->entity,
+                'project' => $row->project,
+            ])
             ->all();
     }
 

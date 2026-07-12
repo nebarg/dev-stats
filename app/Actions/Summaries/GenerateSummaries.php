@@ -40,10 +40,16 @@ class GenerateSummaries
         $metrics = self::dailyMetricRows($user, $start, $end, $timezone);
 
         DB::transaction(static function () use ($user, $start, $end, $items, $metrics): void {
-            $window = [$start->toDateString(), $end->toDateString()];
+            // Half-open string bounds: SQLite stores date casts with a time
+            // suffix, so an inclusive `Y-m-d` upper bound would miss them.
+            $clear = static fn ($query) => $query
+                ->where('user_id', $user->id)
+                ->where('day', '>=', $start->toDateString())
+                ->where('day', '<', $end->addDay()->toDateString())
+                ->delete();
 
-            SummaryItem::query()->where('user_id', $user->id)->whereBetween('day', $window)->delete();
-            DailyMetric::query()->where('user_id', $user->id)->whereBetween('day', $window)->delete();
+            $clear(SummaryItem::query());
+            $clear(DailyMetric::query());
 
             foreach (array_chunk($items, 500) as $chunk) {
                 SummaryItem::insert($chunk);
@@ -53,7 +59,7 @@ class GenerateSummaries
                 DailyMetric::insert($chunk);
             }
 
-            $user->summaries_generated_until = $end->toDateString();
+            $user->summaries_generated_until = $end;
             $user->save();
         });
 

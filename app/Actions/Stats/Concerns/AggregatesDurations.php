@@ -116,19 +116,45 @@ trait AggregatesDurations
      */
     private static function breakdown(Collection $durations, string $column, string $emptyLabel): array
     {
+        return self::topBuckets(self::durationTotals($durations, $column), $emptyLabel);
+    }
+
+    /**
+     * Seconds per bucket for one duration column, keyed by its value ('' for
+     * null or empty) so totals can merge with stored summary buckets.
+     *
+     * @param  Collection<int, Duration>  $durations
+     * @return array<string, int>
+     */
+    private static function durationTotals(Collection $durations, string $column): array
+    {
         $totals = [];
 
         foreach ($durations as $duration) {
             $value = $duration->{$column};
-            $key = is_string($value) && $value !== '' ? $value : $emptyLabel;
+            $key = is_string($value) && $value !== '' ? $value : '';
             $totals[$key] = ($totals[$key] ?? 0) + $duration->duration_seconds;
         }
 
+        return $totals;
+    }
+
+    /**
+     * The heaviest buckets, sorted descending, with the '' bucket labelled.
+     *
+     * @param  array<string, int>  $totals
+     * @return array<int, array{key: string, seconds: int}>
+     */
+    private static function topBuckets(array $totals, string $emptyLabel): array
+    {
         arsort($totals);
 
         return collect($totals)
             ->take(self::BREAKDOWN_LIMIT)
-            ->map(fn (int $seconds, string $key): array => ['key' => $key, 'seconds' => $seconds])
+            ->map(fn (int $seconds, string|int $key): array => [
+                'key' => $key === '' ? $emptyLabel : (string) $key,
+                'seconds' => $seconds,
+            ])
             ->values()
             ->all();
     }

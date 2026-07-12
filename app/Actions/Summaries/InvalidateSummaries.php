@@ -31,7 +31,7 @@ class InvalidateSummaries
             SummaryItem::query()->where('user_id', $user->id)->where('day', '>=', $day->toDateString())->delete();
             DailyMetric::query()->where('user_id', $user->id)->where('day', '>=', $day->toDateString())->delete();
 
-            $user->summaries_generated_until = $day->subDay()->toDateString();
+            $user->summaries_generated_until = $day->subDay();
             $user->save();
         });
     }
