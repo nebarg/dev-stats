@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Stats\BuildDashboardStats;
+use App\Models\AiPrice;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\SummaryItem;
@@ -206,9 +207,13 @@ test('it counts ai sessions and prompt events', function () {
 });
 
 test('it breaks down ai activity by agent model from the user agent', function () {
-    // Fixed prices so assertions don't track the shipped defaults; gpt-5 is
-    // deliberately unpriced.
-    config(['ai-pricing.models' => ['opus' => ['input' => 1000.0, 'output' => 2000.0]]]);
+    // gpt-5 is deliberately unpriced.
+    AiPrice::factory()->create([
+        'model_prefix' => 'opus',
+        'input_price' => 1000.0,
+        'output_price' => 2000.0,
+        'effective_from' => '2026-01-01',
+    ]);
 
     $user = User::factory()->create();
 
@@ -251,6 +256,40 @@ test('it breaks down ai activity by agent model from the user agent', function (
         ['key' => 'opus/4.1-medium', 'lines' => 150, 'input_tokens' => 1000, 'output_tokens' => 100, 'sessions' => 1, 'cost_cents' => 120],
         ['key' => 'gpt-5/high', 'lines' => 40, 'input_tokens' => 0, 'output_tokens' => 0, 'sessions' => 1, 'cost_cents' => null],
     ])->and($ai['estimated_cost_cents'])->toBe(120);
+});
+
+test('it prices tokens at the rate in effect on their day', function () {
+    AiPrice::factory()->create([
+        'model_prefix' => 'opus',
+        'input_price' => 1.0,
+        'output_price' => 0.0,
+        'effective_from' => '2026-01-01',
+    ]);
+    AiPrice::factory()->create([
+        'model_prefix' => 'opus',
+        'input_price' => 2.0,
+        'output_price' => 0.0,
+        'effective_from' => '2026-06-30',
+    ]);
+
+    $user = User::factory()->create();
+
+    // A million tokens before the price rise ($1) and a million after ($2).
+    Heartbeat::factory()->forUser($user)->create([
+        'recorded_at' => CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'),
+        'user_agent' => 'opus/4.8 claude-code/2.1.45',
+        'ai_input_tokens' => 1_000_000,
+    ]);
+    Heartbeat::factory()->forUser($user)->create([
+        'recorded_at' => CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'),
+        'user_agent' => 'opus/4.8 claude-code/2.1.45',
+        'ai_input_tokens' => 1_000_000,
+    ]);
+
+    $ai = BuildDashboardStats::forUser($user, '7d')['ai'];
+
+    expect($ai['agents'][0]['cost_cents'])->toBe(300)
+        ->and($ai['estimated_cost_cents'])->toBe(300);
 });
 
 test('it returns zeroed ai totals with no heartbeats', function () {

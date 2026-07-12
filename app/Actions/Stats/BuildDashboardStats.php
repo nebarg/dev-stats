@@ -362,14 +362,67 @@ class BuildDashboardStats
             $agents[$model] = $agent;
         }
 
+        $costs = self::agentCosts($user, $from, $today);
+
         return collect($agents)
             ->map(static fn (array $agent): array => [
                 ...$agent,
-                'cost_cents' => AiPricing::costInCents($agent['key'], $agent['input_tokens'], $agent['output_tokens']),
+                'cost_cents' => $costs[$agent['key']] ?? null,
             ])
             ->sortByDesc('lines')
             ->values()
             ->all();
+    }
+
+    /**
+     * Estimated cents per agent model, priced per day so a price change
+     * mid-range applies only from its effective date. Cost days bucket in
+     * UTC while dashboard days use the user's timezone — a few hours' drift
+     * at a price boundary is immaterial for an estimate. Only models with at
+     * least one priced day appear; tokens recorded before any price took
+     * effect stay unpriced.
+     *
+     * @return array<string, int>
+     */
+    private static function agentCosts(User $user, CarbonImmutable $from, CarbonImmutable $today): array
+    {
+        $pricing = new AiPricing;
+
+        $rows = Heartbeat::query()
+            ->where('user_id', $user->id)
+            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
+            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->where(function ($query) {
+                $query->whereNotNull('ai_input_tokens')->orWhereNotNull('ai_output_tokens');
+            })
+            ->groupBy('user_agent')
+            ->groupByRaw('DATE(recorded_at)')
+            ->selectRaw(
+                'user_agent, DATE(recorded_at) AS day, '
+                .'COALESCE(SUM(ai_input_tokens), 0) AS input_tokens, '
+                .'COALESCE(SUM(ai_output_tokens), 0) AS output_tokens'
+            )
+            ->get();
+
+        $costs = [];
+
+        foreach ($rows as $row) {
+            $model = UserAgentParser::aiModel($row->user_agent);
+
+            if ($model === null) {
+                continue;
+            }
+
+            $cents = $pricing->costInCents($model, (int) $row->input_tokens, (int) $row->output_tokens, (string) $row->day);
+
+            if ($cents === null) {
+                continue;
+            }
+
+            $costs[$model] = ($costs[$model] ?? 0) + $cents;
+        }
+
+        return $costs;
     }
 
     /**
