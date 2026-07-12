@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\AsCalendarDate;
 use Carbon\CarbonImmutable;
 use Database\Factories\AiPriceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -38,7 +39,7 @@ class AiPrice extends Model
         return [
             'input_price' => 'float',
             'output_price' => 'float',
-            'effective_from' => 'immutable_date',
+            'effective_from' => AsCalendarDate::class,
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\AsCalendarDate;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -50,7 +51,7 @@ class SummaryItem extends Model
     protected function casts(): array
     {
         return [
-            'day' => 'immutable_date',
+            'day' => AsCalendarDate::class,
             'total_seconds' => 'integer',
         ];
     }

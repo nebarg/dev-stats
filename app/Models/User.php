@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Casts\AsCalendarDate;
 use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -101,7 +102,7 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'start_of_week' => 'integer',
             'heartbeat_timeout_sec' => 'integer',
-            'summaries_generated_until' => 'immutable_date',
+            'summaries_generated_until' => AsCalendarDate::class,
         ];
     }
 }
