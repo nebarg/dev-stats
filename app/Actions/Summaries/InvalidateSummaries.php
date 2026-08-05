@@ -28,8 +28,8 @@ class InvalidateSummaries
         }
 
         DB::transaction(static function () use ($user, $day): void {
-            SummaryItem::query()->where('user_id', $user->id)->where('day', '>=', $day->toDateString())->delete();
-            DailyMetric::query()->where('user_id', $user->id)->where('day', '>=', $day->toDateString())->delete();
+            SummaryItem::query()->forUser($user)->where('day', '>=', $day->toDateString())->delete();
+            DailyMetric::query()->forUser($user)->where('day', '>=', $day->toDateString())->delete();
 
             $user->summaries_generated_until = $day->subDay();
             $user->save();
@@ -43,8 +43,8 @@ class InvalidateSummaries
     public static function all(User $user): void
     {
         DB::transaction(static function () use ($user): void {
-            SummaryItem::query()->where('user_id', $user->id)->delete();
-            DailyMetric::query()->where('user_id', $user->id)->delete();
+            SummaryItem::query()->forUser($user)->delete();
+            DailyMetric::query()->forUser($user)->delete();
 
             $user->summaries_generated_until = null;
             $user->save();

@@ -44,7 +44,7 @@ class BuildDashboardStats
         $range = self::normaliseRange($range);
         $timezone = $user->timezone;
         $today = CarbonImmutable::now($timezone)->startOfDay();
-        $from = self::rangeStart(Duration::query()->where('user_id', $user->id), $range, $today, $timezone);
+        $from = self::rangeStart(Duration::query()->forUser($user), $range, $today, $timezone);
 
         $coveredUntil = self::summariesCoveredUntil($user, $today);
         $hasStored = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from);
@@ -112,9 +112,8 @@ class BuildDashboardStats
     private static function durations(User $user, CarbonImmutable $from, CarbonImmutable $today): Collection
     {
         return Duration::query()
-            ->where('user_id', $user->id)
-            ->where('started_at', '>=', $from->setTimezone('UTC'))
-            ->where('started_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->startedBetween($from, $today)
             ->orderBy('started_at')
             ->get([
                 'started_at',
@@ -208,8 +207,8 @@ class BuildDashboardStats
         $liveFrom = $hasStored ? $coveredUntil->addDay() : $windowStart;
 
         $durations = Duration::query()
-            ->where('user_id', $user->id)
-            ->where('started_at', '>=', $liveFrom->setTimezone('UTC'))
+            ->forUser($user)
+            ->startedBetween($liveFrom)
             ->get(['started_at', 'duration_seconds']);
 
         $perDay = self::mergeTotals(
@@ -258,9 +257,8 @@ class BuildDashboardStats
     private static function editing(User $user, CarbonImmutable $from, CarbonImmutable $today): array
     {
         $totals = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $today)
             ->selectRaw(
                 'COUNT(CASE WHEN is_write = 1 THEN 1 END) AS write_events, '
                 .'COUNT(CASE WHEN is_write = 0 THEN 1 END) AS read_events, '
@@ -289,9 +287,8 @@ class BuildDashboardStats
     private static function aiTotals(User $user, CarbonImmutable $from, CarbonImmutable $today): array
     {
         $totals = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $today)
             ->selectRaw(
                 'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
                 .'COALESCE(SUM(human_line_changes), 0) AS human_lines, '
@@ -328,9 +325,8 @@ class BuildDashboardStats
     private static function agents(User $user, CarbonImmutable $from, CarbonImmutable $today): array
     {
         $rows = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $today)
             ->where(function ($query) {
                 $query->whereNotNull('ai_session')
                     ->orWhereNotNull('ai_line_changes')
@@ -392,9 +388,8 @@ class BuildDashboardStats
         $pricing = new AiPricing;
 
         $rows = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $today)
             ->where(function ($query) {
                 $query->whereNotNull('ai_input_tokens')->orWhereNotNull('ai_output_tokens');
             })

@@ -44,7 +44,7 @@ class GenerateDurations
         $current = null;
 
         $heartbeats = Heartbeat::query()
-            ->where('user_id', $user->id)
+            ->forUser($user)
             ->orderBy('recorded_at')
             ->orderBy('id')
             ->lazy();
@@ -103,7 +103,7 @@ class GenerateDurations
     private static function replaceDurations(User $user, array $sessions): int
     {
         return DB::transaction(static function () use ($user, $sessions): int {
-            Duration::query()->where('user_id', $user->id)->delete();
+            Duration::query()->forUser($user)->delete();
 
             $rows = array_map(self::toRow(...), $sessions);
 

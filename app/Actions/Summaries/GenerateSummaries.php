@@ -40,13 +40,7 @@ class GenerateSummaries
         $metrics = self::dailyMetricRows($user, $start, $end, $timezone);
 
         DB::transaction(static function () use ($user, $start, $end, $items, $metrics): void {
-            // Half-open string bounds: SQLite stores date casts with a time
-            // suffix, so an inclusive `Y-m-d` upper bound would miss them.
-            $clear = static fn ($query) => $query
-                ->where('user_id', $user->id)
-                ->where('day', '>=', $start->toDateString())
-                ->where('day', '<', $end->addDay()->toDateString())
-                ->delete();
+            $clear = static fn ($query) => $query->forUser($user)->forDayRange($start, $end)->delete();
 
             $clear(SummaryItem::query());
             $clear(DailyMetric::query());
@@ -99,8 +93,7 @@ class GenerateSummaries
         $totals = [];
 
         $durations = $user->durations()
-            ->where('started_at', '>=', $start->setTimezone('UTC'))
-            ->where('started_at', '<', $end->addDay()->setTimezone('UTC'))
+            ->startedBetween($start, $end)
             ->lazy();
 
         foreach ($durations as $duration) {
@@ -146,8 +139,7 @@ class GenerateSummaries
         $buckets = [];
 
         $heartbeats = $user->heartbeats()
-            ->where('recorded_at', '>=', $start->setTimezone('UTC'))
-            ->where('recorded_at', '<', $end->addDay()->setTimezone('UTC'))
+            ->recordedBetween($start, $end)
             ->where(static function (Builder $query): void {
                 $query->whereNotNull('ai_line_changes')
                     ->orWhereNotNull('human_line_changes')

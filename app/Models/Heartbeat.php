@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToUser;
+use Carbon\CarbonImmutable;
 use Database\Factories\HeartbeatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -51,17 +53,40 @@ use Illuminate\Support\Carbon;
 ])]
 class Heartbeat extends Model
 {
+    use BelongsToUser;
+
     /** @use HasFactory<HeartbeatFactory> */
     use HasFactory;
 
     public const UPDATED_AT = null;
 
     /**
-     * @return BelongsTo<User, $this>
+     * Heartbeats recorded from the start of `$fromDay` through the end of
+     * `$throughDay`, both day-anchored in the user's timezone and compared as
+     * UTC instants. An open `$throughDay` leaves the range unbounded above.
+     *
+     * @param  Builder<static>  $query
      */
-    public function user(): BelongsTo
+    public function scopeRecordedBetween(Builder $query, CarbonImmutable $fromDay, ?CarbonImmutable $throughDay = null): void
     {
-        return $this->belongsTo(User::class);
+        $query->where('recorded_at', '>=', $fromDay->setTimezone('UTC'));
+
+        if ($throughDay !== null) {
+            $query->where('recorded_at', '<', $throughDay->addDay()->setTimezone('UTC'));
+        }
+    }
+
+    /**
+     * Heartbeats carrying line-authorship data (the CLI began sending it in
+     * 2026), i.e. a non-null AI or human line-change count.
+     *
+     * @param  Builder<static>  $query
+     */
+    public function scopeWithLineChanges(Builder $query): void
+    {
+        $query->where(static function (Builder $query): void {
+            $query->whereNotNull('ai_line_changes')->orWhereNotNull('human_line_changes');
+        });
     }
 
     /**

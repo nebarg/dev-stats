@@ -34,8 +34,7 @@ class BuildProjectStats
         $from = self::rangeStart(self::projectDurations($user, $project), $range, $today, $timezone);
 
         $durations = self::projectDurations($user, $project)
-            ->where('started_at', '>=', $from->setTimezone('UTC'))
-            ->where('started_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->startedBetween($from, $today)
             ->orderBy('started_at')
             ->get([
                 'started_at',
@@ -80,7 +79,7 @@ class BuildProjectStats
     private static function projectDurations(User $user, string $project): Builder
     {
         return Duration::query()
-            ->where('user_id', $user->id)
+            ->forUser($user)
             ->where('project', $project);
     }
 
@@ -105,9 +104,8 @@ class BuildProjectStats
         $previousDay = null;
 
         $heartbeats = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $today)
             ->orderBy('recorded_at')
             ->orderBy('id')
             ->lazy();

@@ -66,9 +66,8 @@ class BuildInsightsStats
         $liveFrom = $storedUntil !== null ? $storedUntil->addDay() : $from;
 
         $liveDurations = Duration::query()
-            ->where('user_id', $user->id)
-            ->where('started_at', '>=', $liveFrom->setTimezone('UTC'))
-            ->where('started_at', '<', $dataEnd->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->startedBetween($liveFrom, $dataEnd)
             ->get(['started_at', 'duration_seconds', 'project', 'category']);
 
         $perDay = self::mergeTotals(
@@ -130,9 +129,8 @@ class BuildInsightsStats
         $previousDay = null;
 
         $heartbeats = Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $dataEnd->addDay()->setTimezone('UTC'))
+            ->forUser($user)
+            ->recordedBetween($from, $dataEnd)
             ->orderBy('recorded_at')
             ->orderBy('id')
             ->lazy();
@@ -174,7 +172,7 @@ class BuildInsightsStats
      */
     private static function availableRanges(User $user, CarbonImmutable $now): array
     {
-        $first = Duration::query()->where('user_id', $user->id)->min('started_at');
+        $first = Duration::query()->forUser($user)->min('started_at');
 
         $firstYear = $first !== null
             ? CarbonImmutable::parse($first, 'UTC')->setTimezone($user->timezone)->year
@@ -345,12 +343,9 @@ class BuildInsightsStats
     private static function lineHeartbeats(User $user, CarbonImmutable $from, CarbonImmutable $end): Builder
     {
         return Heartbeat::query()
-            ->where('user_id', $user->id)
-            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $end->addDay()->setTimezone('UTC'))
-            ->where(static function (Builder $query): void {
-                $query->whereNotNull('ai_line_changes')->orWhereNotNull('human_line_changes');
-            });
+            ->forUser($user)
+            ->recordedBetween($from, $end)
+            ->withLineChanges();
     }
 
     /**

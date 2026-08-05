@@ -3,10 +3,11 @@
 namespace App\Models;
 
 use App\Casts\AsCalendarDate;
+use App\Models\Concerns\BelongsToUser;
+use App\Models\Concerns\BucketedByDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -35,13 +36,8 @@ use Illuminate\Support\Carbon;
 ])]
 class DailyMetric extends Model
 {
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
+    use BelongsToUser;
+    use BucketedByDay;
 
     /**
      * @return array<string, string>

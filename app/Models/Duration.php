@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToUser;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -36,12 +38,22 @@ use Illuminate\Support\Carbon;
 ])]
 class Duration extends Model
 {
+    use BelongsToUser;
+
     /**
-     * @return BelongsTo<User, $this>
+     * Sessions started from `$fromDay` through the end of `$throughDay`, both
+     * day-anchored in the user's timezone and compared as UTC instants. An
+     * open `$throughDay` leaves the range unbounded above.
+     *
+     * @param  Builder<static>  $query
      */
-    public function user(): BelongsTo
+    public function scopeStartedBetween(Builder $query, CarbonImmutable $fromDay, ?CarbonImmutable $throughDay = null): void
     {
-        return $this->belongsTo(User::class);
+        $query->where('started_at', '>=', $fromDay->setTimezone('UTC'));
+
+        if ($throughDay !== null) {
+            $query->where('started_at', '<', $throughDay->addDay()->setTimezone('UTC'));
+        }
     }
 
     /**

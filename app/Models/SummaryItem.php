@@ -3,10 +3,11 @@
 namespace App\Models;
 
 use App\Casts\AsCalendarDate;
+use App\Models\Concerns\BelongsToUser;
+use App\Models\Concerns\BucketedByDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,6 +28,9 @@ use Illuminate\Support\Carbon;
 #[Fillable(['user_id', 'day', 'type', 'key', 'total_seconds'])]
 class SummaryItem extends Model
 {
+    use BelongsToUser;
+    use BucketedByDay;
+
     /**
      * Summary dimensions, matching the duration columns they bucket by. The
      * headline total for a day is the sum of any single type's items.
@@ -36,14 +40,6 @@ class SummaryItem extends Model
     ];
 
     public const string HEADLINE_TYPE = 'project';
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
 
     /**
      * @return array<string, string>

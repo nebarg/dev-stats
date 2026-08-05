@@ -72,10 +72,9 @@ trait ReadsSummaries
     private static function storedBucketTotals(User $user, CarbonImmutable $from, CarbonImmutable $until, string $type): array
     {
         $rows = SummaryItem::query()
-            ->where('user_id', $user->id)
+            ->forUser($user)
             ->where('type', $type)
-            ->where('day', '>=', $from->toDateString())
-            ->where('day', '<', $until->addDay()->toDateString())
+            ->forDayRange($from, $until)
             ->groupBy('key')
             ->select('key')
             ->selectRaw('SUM(total_seconds) AS total_seconds')
@@ -98,9 +97,8 @@ trait ReadsSummaries
     private static function storedLinesPerDay(User $user, CarbonImmutable $from, CarbonImmutable $until): array
     {
         $rows = DailyMetric::query()
-            ->where('user_id', $user->id)
-            ->where('day', '>=', $from->toDateString())
-            ->where('day', '<', $until->addDay()->toDateString())
+            ->forUser($user)
+            ->forDayRange($from, $until)
             ->groupBy('day')
             ->orderBy('day')
             ->select('day')
@@ -127,9 +125,8 @@ trait ReadsSummaries
     private static function storedProjectLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $until): array
     {
         $rows = DailyMetric::query()
-            ->where('user_id', $user->id)
-            ->where('day', '>=', $from->toDateString())
-            ->where('day', '<', $until->addDay()->toDateString())
+            ->forUser($user)
+            ->forDayRange($from, $until)
             ->groupBy('project')
             ->select('project')
             ->selectRaw('SUM(ai_lines) AS ai_lines, SUM(human_lines) AS human_lines')
@@ -173,9 +170,8 @@ trait ReadsSummaries
     private static function summaryDayTotals(Builder $query, User $user, CarbonImmutable $from, CarbonImmutable $until): array
     {
         $rows = $query
-            ->where('user_id', $user->id)
-            ->where('day', '>=', $from->toDateString())
-            ->where('day', '<', $until->addDay()->toDateString())
+            ->forUser($user)
+            ->forDayRange($from, $until)
             ->groupBy('day')
             ->orderBy('day')
             ->select('day')
