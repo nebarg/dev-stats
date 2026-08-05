@@ -18,15 +18,17 @@ function positiveLines(item: LineTotals): { ai: number; human: number } {
     };
 }
 
-const max = computed(() =>
-    Math.max(
-        1,
-        ...props.items.map((item) => {
-            const { ai, human } = positiveLines(item);
+// The card ranks by one metric (AI or human lines), so the bar measures that
+// same metric — otherwise an AI-heavy file dwarfs a fully-human one on a
+// "human-edited" card.
+function metricLines(item: LineTotals): number {
+    const { ai, human } = positiveLines(item);
 
-            return ai + human;
-        }),
-    ),
+    return props.highlight === 'ai' ? ai : human;
+}
+
+const max = computed(() =>
+    Math.max(1, ...props.items.map((item) => metricLines(item))),
 );
 
 function width(lines: number): string {
@@ -34,19 +36,18 @@ function width(lines: number): string {
 }
 
 function headline(item: LineTotals): string {
-    const count = props.highlight === 'ai' ? item.ai_lines : item.human_lines;
-
-    return `${formatCompactNumber(count)} lines`;
+    return `${formatCompactNumber(metricLines(item))} lines`;
 }
 
-function share(item: LineTotals): string | null {
+// The card ranks by absolute line count, so a proportion ("0% human") reads as
+// a contradiction next to it. Show the counterpart's count instead, so a
+// top-human row that is mostly AI reads honestly: 31 human lines, 8.3K AI.
+function counterpart(item: LineTotals): string {
     const { ai, human } = positiveLines(item);
+    const other = props.highlight === 'ai' ? human : ai;
+    const label = props.highlight === 'ai' ? 'human' : 'AI';
 
-    if (ai + human === 0) {
-        return null;
-    }
-
-    return `${Math.round((ai / (ai + human)) * 100)}% AI`;
+    return `${formatCompactNumber(other)} ${label} lines`;
 }
 </script>
 
@@ -83,32 +84,15 @@ function share(item: LineTotals): string | null {
                             {{ headline(item) }}
                         </span>
                     </div>
-                    <div class="relative h-1.5 rounded-full bg-muted">
+                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
-                            v-if="
-                                positiveLines(item).ai +
-                                    positiveLines(item).human >
-                                0
-                            "
-                            class="absolute inset-y-0 left-0 rounded-full bg-primary/30"
-                            :style="{
-                                width: width(
-                                    positiveLines(item).ai +
-                                        positiveLines(item).human,
-                                ),
-                            }"
-                        />
-                        <div
-                            v-if="positiveLines(item).ai > 0"
-                            class="absolute inset-y-0 left-0 rounded-full bg-primary"
-                            :style="{ width: width(positiveLines(item).ai) }"
+                            v-if="metricLines(item) > 0"
+                            class="h-full rounded-full bg-primary"
+                            :style="{ width: width(metricLines(item)) }"
                         />
                     </div>
-                    <span
-                        v-if="share(item)"
-                        class="text-xs text-muted-foreground"
-                    >
-                        {{ share(item) }}
+                    <span class="text-xs text-muted-foreground">
+                        {{ counterpart(item) }}
                     </span>
                 </div>
             </div>
