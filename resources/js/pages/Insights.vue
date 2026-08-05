@@ -109,31 +109,31 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
         <WeekdayAveragesCard :weekdays="stats.weekdays" />
 
         <div class="grid gap-4 md:grid-cols-2">
-            <BreakdownCard title="Top projects" :items="stats.top_projects" />
-            <BreakdownCard title="Top files" :items="stats.top_files" />
+            <BreakdownCard title="Top projects — by time" :items="stats.top_projects" />
+            <BreakdownCard title="Top files — by time" :items="stats.top_files" />
         </div>
 
         <div class="grid gap-4 md:grid-cols-2">
             <TopLinesCard
-                title="Top AI-assisted projects"
+                title="Top projects — by AI lines"
                 :items="stats.top_ai_projects"
                 highlight="ai"
                 empty-message="No AI line changes recorded for this period."
             />
             <TopLinesCard
-                title="Top human-edited projects"
+                title="Top projects — by human lines"
                 :items="stats.top_human_projects"
                 highlight="human"
                 empty-message="No human line changes recorded for this period."
             />
             <TopLinesCard
-                title="Top AI-assisted files"
+                title="Top files — by AI lines"
                 :items="stats.top_ai_files"
                 highlight="ai"
                 empty-message="No AI line changes recorded for this period."
             />
             <TopLinesCard
-                title="Top human-edited files"
+                title="Top files — by human lines"
                 :items="stats.top_human_files"
                 highlight="human"
                 empty-message="No human line changes recorded for this period."
