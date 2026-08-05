@@ -1,13 +1,15 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/vue-starter-kit",
+    "name": "gb/dev-stats",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Self-hosted, WakaTime-compatible coding statistics with AI-authorship metrics.",
     "keywords": [
-        "laravel",
-        "framework"
+        "wakatime",
+        "coding-stats",
+        "self-hosted",
+        "laravel"
     ],
-    "license": "MIT",
+    "license": "AGPL-3.0-or-later",
     "require": {
         "php": "^8.5",
         "inertiajs/inertia-laravel": "^3.1.1",
