@@ -2,7 +2,7 @@
 import type { HTMLAttributes, Ref } from "vue"
 import { defaultDocument, useEventListener, useMediaQuery, useVModel } from "@vueuse/core"
 import { TooltipProvider } from "reka-ui"
-import { computed, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { cn } from "@/lib/utils"
 import { provideSidebarContext, SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME, SIDEBAR_KEYBOARD_SHORTCUT, SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from "./utils"
 
@@ -19,8 +19,19 @@ const emits = defineEmits<{
   "update:open": [open: boolean]
 }>()
 
-const isMobile = useMediaQuery("(max-width: 768px)")
+// `useMediaQuery` resolves synchronously on the client, so on a narrow viewport
+// the first client render would pick the mobile <Sheet> branch while the server
+// (no `window`) always renders the desktop sidebar — a hydration mismatch. Gate
+// the result behind a mounted flag so hydration matches the server, then flip to
+// the real viewport value on the next tick.
+const isMounted = ref(false)
+const matchesMobile = useMediaQuery("(max-width: 768px)")
+const isMobile = computed(() => isMounted.value && matchesMobile.value)
 const openMobile = ref(false)
+
+onMounted(() => {
+  isMounted.value = true
+})
 
 const open = useVModel(props, "open", emits, {
   defaultValue: props.defaultOpen ?? false,

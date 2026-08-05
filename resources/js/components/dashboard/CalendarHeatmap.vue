@@ -17,7 +17,8 @@ const levelClasses = [
     'bg-primary',
 ];
 
-const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'short' });
+// Pinned locale so SSR (Node) and client agree — see resources/js/lib/format.ts.
+const monthFormat = new Intl.DateTimeFormat('en-GB', { month: 'short' });
 
 function toDate(date: string): Date {
     const [year, month, day] = date.split('-').map(Number);

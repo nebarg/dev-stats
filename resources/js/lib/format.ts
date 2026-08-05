@@ -1,3 +1,9 @@
+// Pin a locale so server-rendered and client-rendered strings match. With the
+// runtime default (`undefined`), Node SSR resolves to en-US while the browser
+// resolves to en-GB, which reorders dates ("Aug 3" vs "3 Aug") and triggers
+// hydration mismatches. The app is British English throughout.
+const LOCALE = 'en-GB';
+
 /**
  * Picks the singular or plural noun for a count. The plural defaults to the
  * singular with an "s" appended: `pluralise(3, 'day')` → "days".
@@ -48,7 +54,7 @@ export function formatUsd(cents: number): string {
  * Compact "4.8K" / "63.1M" rendering for large counts (lines, tokens).
  */
 export function formatCompactNumber(value: number): string {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(LOCALE, {
         notation: 'compact',
         maximumFractionDigits: 1,
     }).format(value);
@@ -64,7 +70,7 @@ function toLocalDate(date: string): Date {
  * "Sun, 28 Jun" style label for a Y-m-d date, in the viewer's locale.
  */
 export function formatDayLabel(date: string): string {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(LOCALE, {
         weekday: 'short',
         day: 'numeric',
         month: 'short',
@@ -75,7 +81,7 @@ export function formatDayLabel(date: string): string {
  * Short weekday ("Mon") for a Y-m-d date.
  */
 export function formatWeekday(date: string): string {
-    return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(
+    return new Intl.DateTimeFormat(LOCALE, { weekday: 'short' }).format(
         toLocalDate(date),
     );
 }
@@ -84,7 +90,7 @@ export function formatWeekday(date: string): string {
  * Compact "28 Jun" day-and-month label for a Y-m-d date.
  */
 export function formatDayMonth(date: string): string {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(LOCALE, {
         day: 'numeric',
         month: 'short',
     }).format(toLocalDate(date));
