@@ -79,3 +79,13 @@ export function formatWeekday(date: string): string {
         toLocalDate(date),
     );
 }
+
+/**
+ * Compact "28 Jun" day-and-month label for a Y-m-d date.
+ */
+export function formatDayMonth(date: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+        day: 'numeric',
+        month: 'short',
+    }).format(toLocalDate(date));
+}
