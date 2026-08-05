@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import MeterBar from '@/components/dashboard/MeterBar.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCompactNumber } from '@/lib/format';
 import type { LineTotals } from '@/types';
@@ -30,10 +31,6 @@ function metricLines(item: LineTotals): number {
 const max = computed(() =>
     Math.max(1, ...props.items.map((item) => metricLines(item))),
 );
-
-function width(lines: number): string {
-    return `${(lines / max.value) * 100}%`;
-}
 
 function headline(item: LineTotals): string {
     return `${formatCompactNumber(metricLines(item))} lines`;
@@ -84,13 +81,7 @@ function counterpart(item: LineTotals): string {
                             {{ headline(item) }}
                         </span>
                     </div>
-                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                            v-if="metricLines(item) > 0"
-                            class="h-full rounded-full bg-primary"
-                            :style="{ width: width(metricLines(item)) }"
-                        />
-                    </div>
+                    <MeterBar :value="metricLines(item)" :max="max" />
                     <span class="text-xs text-muted-foreground">
                         {{ counterpart(item) }}
                     </span>

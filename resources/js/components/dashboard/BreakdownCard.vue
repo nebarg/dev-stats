@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import MeterBar from '@/components/dashboard/MeterBar.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDuration } from '@/lib/format';
 import type { BreakdownItem } from '@/types';
@@ -14,10 +15,6 @@ const props = defineProps<{
 const max = computed(() =>
     Math.max(1, ...props.items.map((item) => item.seconds)),
 );
-
-function width(seconds: number): string {
-    return `${Math.max(2, (seconds / max.value) * 100)}%`;
-}
 </script>
 
 <template>
@@ -52,12 +49,11 @@ function width(seconds: number): string {
                             {{ formatDuration(item.seconds) }}
                         </span>
                     </div>
-                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                            class="h-full rounded-full bg-primary"
-                            :style="{ width: width(item.seconds) }"
-                        />
-                    </div>
+                    <MeterBar
+                        :value="item.seconds"
+                        :max="max"
+                        :min-percent="2"
+                    />
                 </div>
             </div>
         </CardContent>

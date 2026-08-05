@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import MeterBar from '@/components/dashboard/MeterBar.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCompactNumber, formatUsd, pluralise } from '@/lib/format';
 import type { AgentStats } from '@/types';
@@ -11,10 +12,6 @@ const props = defineProps<{
 const max = computed(() =>
     Math.max(1, ...props.agents.map((agent) => agent.lines)),
 );
-
-function width(lines: number): string {
-    return `${Math.max(2, (Math.max(0, lines) / max.value) * 100)}%`;
-}
 
 function detail(agent: AgentStats): string {
     const tokens = agent.input_tokens + agent.output_tokens;
@@ -58,12 +55,11 @@ function detail(agent: AgentStats): string {
                             {{ pluralise(agent.lines, 'line') }}
                         </span>
                     </div>
-                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                            class="h-full rounded-full bg-primary"
-                            :style="{ width: width(agent.lines) }"
-                        />
-                    </div>
+                    <MeterBar
+                        :value="agent.lines"
+                        :max="max"
+                        :min-percent="2"
+                    />
                     <span class="text-xs text-muted-foreground">
                         {{ detail(agent) }}
                     </span>
