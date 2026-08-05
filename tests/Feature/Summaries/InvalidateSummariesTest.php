@@ -43,7 +43,7 @@ test('a heartbeat for an already-summarised day discards summaries from that day
     storedSummary($user, '2026-06-29');
     DailyMetric::create(['user_id' => $user->id, 'day' => '2026-06-28', 'project' => 'app', 'ai_lines' => 10]);
 
-    StoreHeartbeats::handle($user, [
+    app(StoreHeartbeats::class)->handle($user, [
         lateHeartbeatPayload(CarbonImmutable::parse('2026-06-28 10:00:00', 'UTC')),
     ], null, null);
 
@@ -64,7 +64,7 @@ test('a heartbeat for today leaves stored summaries alone', function () {
 
     storedSummary($user, '2026-06-29');
 
-    StoreHeartbeats::handle($user, [
+    app(StoreHeartbeats::class)->handle($user, [
         lateHeartbeatPayload(CarbonImmutable::parse('2026-06-30 10:00:00', 'UTC')),
     ], null, null);
 
@@ -78,7 +78,7 @@ test('a duplicate of an already-stored heartbeat does not invalidate', function 
 
     // First delivery stores the heartbeat (nothing summarised yet, nothing to
     // invalidate). Summaries are then generated over it.
-    StoreHeartbeats::handle($user, [$payload], null, null);
+    app(StoreHeartbeats::class)->handle($user, [$payload], null, null);
 
     $user->refresh();
     $user->summaries_generated_until = '2026-06-29';
@@ -87,7 +87,7 @@ test('a duplicate of an already-stored heartbeat does not invalidate', function 
 
     // The offline queue re-delivers the same heartbeat: a dedup hit, so the
     // stored summaries still hold.
-    StoreHeartbeats::handle($user, [$payload], null, null);
+    app(StoreHeartbeats::class)->handle($user, [$payload], null, null);
 
     expect(SummaryItem::query()->where('user_id', $user->id)->count())->toBe(1)
         ->and($user->fresh()->summaries_generated_until->toDateString())->toBe('2026-06-29');
@@ -103,7 +103,7 @@ test('lateness is judged against the day in the user timezone', function () {
 
     // 13:00 UTC on the 29th is already the 30th in Auckland — today there, so
     // not late despite matching the marker's UTC date.
-    StoreHeartbeats::handle($user, [
+    app(StoreHeartbeats::class)->handle($user, [
         lateHeartbeatPayload(CarbonImmutable::parse('2026-06-29 13:00:00', 'UTC')),
     ], null, null);
 

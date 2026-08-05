@@ -19,7 +19,7 @@ class InvalidateSummaries
      * Invalidate the given user-timezone calendar day and everything after
      * it — used when a heartbeat arrives for an already-summarised day.
      */
-    public static function fromDay(User $user, CarbonImmutable $day): void
+    public function fromDay(User $user, CarbonImmutable $day): void
     {
         $marker = $user->summaries_generated_until;
 
@@ -40,7 +40,7 @@ class InvalidateSummaries
      * Wipe every stored summary — used when a setting that shapes them
      * (timezone, timeout) changes and day buckets no longer line up.
      */
-    public static function all(User $user): void
+    public function all(User $user): void
     {
         DB::transaction(static function () use ($user): void {
             SummaryItem::query()->forUser($user)->delete();

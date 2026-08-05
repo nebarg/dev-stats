@@ -13,7 +13,7 @@ use Illuminate\Console\Command;
 #[Description('Regenerate durations and roll them up into daily summaries')]
 class GenerateSummariesCommand extends Command
 {
-    public function handle(): int
+    public function handle(GenerateDurations $durations, GenerateSummaries $summaries): int
     {
         $users = $this->argument('user') !== null
             ? User::where('id', $this->argument('user'))->get()
@@ -26,8 +26,8 @@ class GenerateSummariesCommand extends Command
         }
 
         foreach ($users as $user) {
-            GenerateDurations::forUser($user);
-            $summary = GenerateSummaries::forUser($user);
+            $durations->forUser($user);
+            $summary = $summaries->forUser($user);
 
             $this->components->info(
                 "Summarised {$summary['days']} day(s) into {$summary['items']} summary item(s) "

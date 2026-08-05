@@ -60,7 +60,7 @@ test('it rolls durations into per-day summary items up to yesterday and sets the
     // Today must never be persisted.
     summaryDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 9999);
 
-    $result = GenerateSummaries::forUser($user);
+    $result = app(GenerateSummaries::class)->forUser($user);
 
     expect($result['days'])->toBe(2)
         ->and($user->fresh()->summaries_generated_until->toDateString())->toBe('2026-06-29');
@@ -90,7 +90,7 @@ test('it buckets days in the user timezone', function () {
     Heartbeat::factory()->forUser($user)->create(['recorded_at' => CarbonImmutable::parse('2026-06-28 13:00:00', 'UTC')]);
     summaryDuration($user, CarbonImmutable::parse('2026-06-28 13:00:00', 'UTC'), 600);
 
-    GenerateSummaries::forUser($user);
+    app(GenerateSummaries::class)->forUser($user);
 
     expect(summaryItemsFor($user)->pluck('day')->unique()->map->toDateString()->all())->toBe(['2026-06-29']);
 });
@@ -101,7 +101,7 @@ test('it stores null keys for durations without a dimension value', function () 
     Heartbeat::factory()->forUser($user)->create(['recorded_at' => CarbonImmutable::parse('2026-06-29 09:00:00', 'UTC')]);
     summaryDuration($user, CarbonImmutable::parse('2026-06-29 09:00:00', 'UTC'), 600, ['project' => null, 'branch' => null]);
 
-    GenerateSummaries::forUser($user);
+    app(GenerateSummaries::class)->forUser($user);
 
     $items = summaryItemsFor($user);
 
@@ -115,10 +115,10 @@ test('it resumes from the marker and re-running adds nothing', function () {
     Heartbeat::factory()->forUser($user)->create(['recorded_at' => CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC')]);
     summaryDuration($user, CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'), 600);
 
-    $first = GenerateSummaries::forUser($user);
+    $first = app(GenerateSummaries::class)->forUser($user);
     $countAfterFirst = SummaryItem::count();
 
-    $second = GenerateSummaries::forUser($user->fresh());
+    $second = app(GenerateSummaries::class)->forUser($user->fresh());
 
     expect($first['days'])->toBe(2)
         ->and($second)->toBe(['days' => 0, 'items' => 0, 'metrics' => 0])
@@ -131,13 +131,13 @@ test('it summarises only days after the marker on later runs', function () {
     Heartbeat::factory()->forUser($user)->create(['recorded_at' => CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC')]);
     summaryDuration($user, CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'), 600);
 
-    GenerateSummaries::forUser($user);
+    app(GenerateSummaries::class)->forUser($user);
 
     // A day passes; yesterday's activity becomes summarisable.
     $this->travelTo(CarbonImmutable::parse('2026-07-01 12:00:00', 'UTC'));
     summaryDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 300);
 
-    $result = GenerateSummaries::forUser($user->fresh());
+    $result = app(GenerateSummaries::class)->forUser($user->fresh());
 
     expect($result['days'])->toBe(1)
         ->and($user->fresh()->summaries_generated_until->toDateString())->toBe('2026-06-30')
@@ -198,7 +198,7 @@ test('it rolls ai heartbeat counts into daily metrics by project and editor', fu
         'ai_prompt_length' => null,
     ]);
 
-    GenerateSummaries::forUser($user);
+    app(GenerateSummaries::class)->forUser($user);
 
     $metrics = DailyMetric::query()->where('user_id', $user->id)->orderBy('project')->get();
 
@@ -221,7 +221,7 @@ test('it rolls ai heartbeat counts into daily metrics by project and editor', fu
 test('it does nothing for a user without heartbeats', function () {
     $user = User::factory()->create();
 
-    expect(GenerateSummaries::forUser($user))->toBe(['days' => 0, 'items' => 0, 'metrics' => 0])
+    expect(app(GenerateSummaries::class)->forUser($user))->toBe(['days' => 0, 'items' => 0, 'metrics' => 0])
         ->and($user->fresh()->summaries_generated_until)->toBeNull();
 });
 

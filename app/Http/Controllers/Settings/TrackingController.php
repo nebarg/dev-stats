@@ -32,8 +32,12 @@ class TrackingController extends Controller
     /**
      * Update the user's tracking settings.
      */
-    public function update(TrackingUpdateRequest $request): RedirectResponse
-    {
+    public function update(
+        TrackingUpdateRequest $request,
+        InvalidateSummaries $invalidate,
+        GenerateDurations $durations,
+        GenerateSummaries $summaries,
+    ): RedirectResponse {
         $user = $request->user();
         $user->fill($request->validated());
 
@@ -46,9 +50,9 @@ class TrackingController extends Controller
         $user->save();
 
         if ($isRegenerationNeeded) {
-            InvalidateSummaries::all($user);
-            GenerateDurations::forUser($user);
-            GenerateSummaries::forUser($user);
+            $invalidate->all($user);
+            $durations->forUser($user);
+            $summaries->forUser($user);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Tracking settings updated.')]);

@@ -31,7 +31,7 @@ class ImportWakatimeExport extends Command
 {
     private const int CHUNK = 2000;
 
-    public function handle(): int
+    public function handle(GenerateDurations $generateDurations, GenerateSummaries $generateSummaries): int
     {
         ini_set('memory_limit', '4G');
 
@@ -96,12 +96,12 @@ class ImportWakatimeExport extends Command
         $this->info("Inserted {$imported} new heartbeats (duplicates ignored).");
 
         $this->info('Regenerating durations…');
-        $durations = GenerateDurations::forUser($user);
+        $durations = $generateDurations->forUser($user);
 
         $this->info('Rolling up summaries…');
         $user->summaries_generated_until = null;
         $user->save();
-        GenerateSummaries::forUser($user);
+        $generateSummaries->forUser($user);
 
         $this->info("Done. {$durations} durations generated.");
 
@@ -233,7 +233,7 @@ class ImportWakatimeExport extends Command
     }
 
     /**
-     * Mirrors StoreHeartbeats::hash so an imported heartbeat and a later
+     * Mirrors HeartbeatMapper::hash so an imported heartbeat and a later
      * dual-sent copy of it collapse to one row.
      *
      * @param  array<string, mixed>  $attributes

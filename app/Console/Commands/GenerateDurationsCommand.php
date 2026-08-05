@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
 #[Description('Rebuild coding-session durations from raw heartbeats')]
 class GenerateDurationsCommand extends Command
 {
-    public function handle(): int
+    public function handle(GenerateDurations $durations): int
     {
         $users = $this->argument('user') !== null
             ? User::where('id', $this->argument('user'))->get()
@@ -25,7 +25,7 @@ class GenerateDurationsCommand extends Command
         }
 
         foreach ($users as $user) {
-            $count = GenerateDurations::forUser($user);
+            $count = $durations->forUser($user);
             $this->components->info("Generated {$count} duration(s) for user {$user->id} ({$user->email}).");
         }
 

@@ -43,7 +43,7 @@ test('consecutive heartbeats within the timeout form one session', function () {
     beat($user, $base->addMinutes(2));
     beat($user, $base->addMinutes(4));
 
-    expect(GenerateDurations::forUser($user))->toBe(1);
+    expect(app(GenerateDurations::class)->forUser($user))->toBe(1);
 
     $duration = durationsFor($user)->sole();
 
@@ -59,7 +59,7 @@ test('a gap of at least the timeout starts a new session', function () {
     beat($user, $base);
     beat($user, $base->addMinutes(16));
 
-    expect(GenerateDurations::forUser($user))->toBe(2);
+    expect(app(GenerateDurations::class)->forUser($user))->toBe(2);
 
     expect(durationsFor($user)->pluck('duration_seconds')->all())->toBe([0, 0]);
 });
@@ -71,7 +71,7 @@ test('a change of grouping key starts a new session and credits the gap to the p
     beat($user, $base, ['project' => 'alpha']);
     beat($user, $base->addMinutes(2), ['project' => 'beta']);
 
-    expect(GenerateDurations::forUser($user))->toBe(2);
+    expect(app(GenerateDurations::class)->forUser($user))->toBe(2);
 
     $byProject = durationsFor($user)->keyBy('project');
 
@@ -85,7 +85,7 @@ test('a session never crosses a day boundary in the user timezone', function () 
     beat($user, CarbonImmutable::parse('2026-06-20 23:59:00', 'UTC'));
     beat($user, CarbonImmutable::parse('2026-06-21 00:01:00', 'UTC'));
 
-    expect(GenerateDurations::forUser($user))->toBe(2);
+    expect(app(GenerateDurations::class)->forUser($user))->toBe(2);
 });
 
 test('day boundaries are computed in the user timezone', function () {
@@ -102,8 +102,8 @@ test('day boundaries are computed in the user timezone', function () {
     beat($aucklandUser, $first);
     beat($aucklandUser, $second);
 
-    expect(GenerateDurations::forUser($utcUser))->toBe(1)
-        ->and(GenerateDurations::forUser($aucklandUser))->toBe(2);
+    expect(app(GenerateDurations::class)->forUser($utcUser))->toBe(1)
+        ->and(app(GenerateDurations::class)->forUser($aucklandUser))->toBe(2);
 });
 
 test('regeneration replaces existing durations and is idempotent', function () {
@@ -113,8 +113,8 @@ test('regeneration replaces existing durations and is idempotent', function () {
     beat($user, $base);
     beat($user, $base->addMinutes(2));
 
-    GenerateDurations::forUser($user);
-    GenerateDurations::forUser($user);
+    app(GenerateDurations::class)->forUser($user);
+    app(GenerateDurations::class)->forUser($user);
 
     expect(durationsFor($user))->toHaveCount(1);
 });
@@ -128,7 +128,7 @@ test('the configured heartbeat timeout changes how sessions are split', function
     beat($user, $base);
     beat($user, $base->addMinutes(2));
 
-    expect(GenerateDurations::forUser($user))->toBe(2);
+    expect(app(GenerateDurations::class)->forUser($user))->toBe(2);
 });
 
 test('each user is sessionized independently', function () {
@@ -139,7 +139,7 @@ test('each user is sessionized independently', function () {
     beat($a, $base);
     beat($b, $base);
 
-    GenerateDurations::forUser($a);
+    app(GenerateDurations::class)->forUser($a);
 
     expect(durationsFor($a))->toHaveCount(1)
         ->and(durationsFor($b))->toHaveCount(0);

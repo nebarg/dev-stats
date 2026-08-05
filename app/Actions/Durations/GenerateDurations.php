@@ -23,7 +23,7 @@ class GenerateDurations
     /**
      * @return int the number of durations generated
      */
-    public static function forUser(User $user): int
+    public function forUser(User $user): int
     {
         $sessions = self::foldHeartbeatsIntoSessions($user);
 
