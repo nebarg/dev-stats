@@ -105,7 +105,26 @@ test('it labels empty project and language buckets and defaults unknown ranges',
 
     expect($stats['range'])->toBe('7d')
         ->and($stats['breakdowns']['projects'])->toBe([['key' => 'No project', 'seconds' => 600]])
-        ->and($stats['breakdowns']['languages'])->toBe([['key' => 'AI Session', 'seconds' => 600]]);
+        ->and($stats['breakdowns']['languages'])->toBe([['key' => 'Other', 'seconds' => 600]]);
+});
+
+test('it folds non-languages and empty languages into a single Other bucket', function () {
+    $user = User::factory()->create();
+
+    $day = CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC');
+
+    makeDuration($user, $day, 600, ['language' => 'PHP']);
+    makeDuration($user, $day->addMinutes(10), 120, ['language' => '.env file']);
+    makeDuration($user, $day->addMinutes(20), 90, ['language' => 'GitIgnore file']);
+    makeDuration($user, $day->addMinutes(30), 60, ['language' => 'Text']);
+    makeDuration($user, $day->addMinutes(40), 30, ['language' => null]);
+
+    $stats = BuildDashboardStats::forUser($user, '30d');
+
+    expect($stats['breakdowns']['languages'])->toBe([
+        ['key' => 'PHP', 'seconds' => 600],
+        ['key' => 'Other', 'seconds' => 300],
+    ]);
 });
 
 test('it buckets days in the user timezone', function () {
@@ -130,8 +149,8 @@ test('it breaks down time by category', function () {
     $categories = BuildDashboardStats::forUser($user, '7d')['breakdowns']['categories'];
 
     expect($categories)->toBe([
-        ['key' => 'ai coding', 'seconds' => 1200],
-        ['key' => 'coding', 'seconds' => 600],
+        ['key' => 'AI coding', 'seconds' => 1200],
+        ['key' => 'Human coding', 'seconds' => 600],
         ['key' => 'Uncategorised', 'seconds' => 300],
     ]);
 });

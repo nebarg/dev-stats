@@ -8,6 +8,8 @@ use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
 use App\Support\AiPricing;
+use App\Support\CategoryLabel;
+use App\Support\LanguageClassifier;
 use App\Support\UserAgentParser;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -61,12 +63,13 @@ class BuildDashboardStats
             self::secondsPerDay($liveDurations, $timezone),
         );
 
-        $breakdown = fn (string $type, string $emptyLabel): array => self::topBuckets(
+        $breakdown = fn (string $type, string $emptyLabel, ?callable $normaliseKey = null): array => self::topBuckets(
             self::mergeTotals(
                 $hasStored ? self::storedBucketTotals($user, $from, $coveredUntil, $type) : [],
                 self::durationTotals($liveDurations, $type),
             ),
             $emptyLabel,
+            $normaliseKey,
         );
 
         $total = array_sum($perDay);
@@ -95,10 +98,10 @@ class BuildDashboardStats
             ],
             'breakdowns' => [
                 'projects' => $breakdown('project', 'No project'),
-                'languages' => $breakdown('language', 'AI Session'),
+                'languages' => $breakdown('language', LanguageClassifier::classify(null), LanguageClassifier::classify(...)),
                 'editors' => $breakdown('editor', 'Unknown editor'),
                 'operating_systems' => $breakdown('operating_system', 'Unknown OS'),
-                'categories' => $breakdown('category', 'Uncategorised'),
+                'categories' => $breakdown('category', 'Uncategorised', CategoryLabel::format(...)),
             ],
         ];
     }

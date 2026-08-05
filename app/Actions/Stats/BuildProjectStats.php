@@ -6,6 +6,8 @@ use App\Actions\Stats\Concerns\AggregatesDurations;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
+use App\Support\CategoryLabel;
+use App\Support\LanguageClassifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -64,10 +66,10 @@ class BuildProjectStats
             'files' => $files,
             'file_count' => $fileCount,
             'breakdowns' => [
-                'languages' => self::breakdown($durations, 'language', 'AI Session'),
+                'languages' => self::breakdown($durations, 'language', LanguageClassifier::classify(null), LanguageClassifier::classify(...)),
                 'branches' => self::breakdown($durations, 'branch', 'No branch'),
                 'editors' => self::breakdown($durations, 'editor', 'Unknown editor'),
-                'categories' => self::breakdown($durations, 'category', 'Uncategorised'),
+                'categories' => self::breakdown($durations, 'category', 'Uncategorised', CategoryLabel::format(...)),
             ],
         ];
     }

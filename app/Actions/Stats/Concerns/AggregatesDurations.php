@@ -109,14 +109,17 @@ trait AggregatesDurations
     /**
      * Top buckets for one duration column, summed and sorted descending. Null or
      * empty values collapse into $emptyLabel (e.g. AI-session events carry no
-     * language) so every breakdown still sums to the total.
+     * language) so every breakdown still sums to the total. An optional
+     * $normaliseKey remaps each bucket key before summing (e.g. folding
+     * non-languages into "Other").
      *
      * @param  Collection<int, Duration>  $durations
+     * @param  (callable(string): string)|null  $normaliseKey
      * @return array<int, array{key: string, seconds: int}>
      */
-    private static function breakdown(Collection $durations, string $column, string $emptyLabel): array
+    private static function breakdown(Collection $durations, string $column, string $emptyLabel, ?callable $normaliseKey = null): array
     {
-        return self::topBuckets(self::durationTotals($durations, $column), $emptyLabel);
+        return self::topBuckets(self::durationTotals($durations, $column), $emptyLabel, $normaliseKey);
     }
 
     /**
@@ -140,13 +143,27 @@ trait AggregatesDurations
     }
 
     /**
-     * The heaviest buckets, sorted descending, with the '' bucket labelled.
+     * The heaviest buckets, sorted descending, with the '' bucket labelled. An
+     * optional $normaliseKey remaps each key first — keys that collapse to the
+     * same normalised value are summed together.
      *
      * @param  array<string, int>  $totals
+     * @param  (callable(string): string)|null  $normaliseKey
      * @return array<int, array{key: string, seconds: int}>
      */
-    private static function topBuckets(array $totals, string $emptyLabel): array
+    private static function topBuckets(array $totals, string $emptyLabel, ?callable $normaliseKey = null): array
     {
+        if ($normaliseKey !== null) {
+            $normalised = [];
+
+            foreach ($totals as $key => $seconds) {
+                $mapped = $normaliseKey((string) $key);
+                $normalised[$mapped] = ($normalised[$mapped] ?? 0) + $seconds;
+            }
+
+            $totals = $normalised;
+        }
+
         arsort($totals);
 
         return collect($totals)
