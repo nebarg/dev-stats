@@ -1,6 +1,13 @@
 <script setup lang="ts">
+import { CircleHelp } from '@lucide/vue';
 import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { formatDuration } from '@/lib/format';
 import type { WeekdayAverage } from '@/types';
 
@@ -32,6 +39,25 @@ function width(seconds: number): string {
                     <span class="flex items-center gap-1.5">
                         <span class="h-2 w-2 rounded-full bg-primary/30" />
                         Other
+                        <TooltipProvider :delay-duration="0">
+                            <Tooltip>
+                                <TooltipTrigger as-child>
+                                    <button
+                                        type="button"
+                                        class="inline-flex cursor-help text-muted-foreground/70 transition-colors hover:text-foreground"
+                                        aria-label="What counts as Other?"
+                                    >
+                                        <CircleHelp class="size-3.5" />
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent class="max-w-56">
+                                    All tracked time that isn't AI coding —
+                                    human coding plus writing docs and tests.
+                                    It's a split of time by category, not
+                                    AI-vs-human line authorship.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </span>
                 </div>
             </div>
