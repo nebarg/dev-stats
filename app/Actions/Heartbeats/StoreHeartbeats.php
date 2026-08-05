@@ -196,10 +196,10 @@ class StoreHeartbeats
             $attributes['project'],
             $attributes['branch'],
             $attributes['language'],
-            match ($attributes['is_write']) {
-                true => '1',
-                false => '0',
-                null => '',
+            match (true) {
+                $attributes['is_write'] === true => '1',
+                $attributes['is_write'] === false => '0',
+                default => '',
             },
             $attributes['ai_session'],
             $attributes['recorded_at']->format('Y-m-d H:i:s.v'),

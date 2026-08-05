@@ -14,7 +14,9 @@ class HeartbeatController extends Controller
 {
     public function store(#[CurrentUser] User $user, Request $request): JsonResponse
     {
-        $payload = $request->json()->all();
+        // The CLI posts a single heartbeat object or a list of them.
+        $decoded = json_decode($request->getContent(), true);
+        $payload = is_array($decoded) ? $decoded : [];
         $heartbeats = array_is_list($payload) ? $payload : [$payload];
 
         $results = StoreHeartbeats::handle(
