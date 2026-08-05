@@ -37,7 +37,7 @@ class GenerateDurations
      */
     private static function foldHeartbeatsIntoSessions(User $user): array
     {
-        $timeoutMs = $user->heartbeat_timeout_sec * 1000;
+        $timeoutMs = self::timeoutSeconds() * 1000;
         $timezone = $user->timezone;
 
         $sessions = [];
@@ -133,8 +133,13 @@ class GenerateDurations
             'category' => $heartbeat->category,
             'heartbeat_count' => 1,
             'group_hash' => $group,
-            'timeout_seconds' => $user->heartbeat_timeout_sec,
+            'timeout_seconds' => self::timeoutSeconds(),
         ];
+    }
+
+    private static function timeoutSeconds(): int
+    {
+        return config('stats.heartbeat_timeout_sec');
     }
 
     /**

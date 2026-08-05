@@ -94,7 +94,7 @@ class BuildProjectStats
      */
     private static function files(User $user, string $project, CarbonImmutable $from, CarbonImmutable $today): array
     {
-        $timeoutMs = $user->heartbeat_timeout_sec * 1000;
+        $timeoutMs = (int) config('stats.heartbeat_timeout_sec') * 1000;
         $timezone = $user->timezone;
 
         $files = [];

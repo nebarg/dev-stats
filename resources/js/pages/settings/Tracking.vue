@@ -19,7 +19,6 @@ import { edit } from '@/routes/tracking';
 
 const props = defineProps<{
     timezone: string;
-    heartbeatTimeoutSec: number;
     timezones: string[];
     apiKey: string;
     apiUrl: string;
@@ -35,26 +34,6 @@ defineOptions({
         ],
     },
 });
-
-const timeoutOptions = [
-    { value: '60', label: '1 minute' },
-    { value: '120', label: '2 minutes' },
-    { value: '300', label: '5 minutes' },
-    { value: '600', label: '10 minutes' },
-    { value: '900', label: '15 minutes' },
-    { value: '1200', label: '20 minutes' },
-    { value: '1800', label: '30 minutes' },
-    { value: '3600', label: '1 hour' },
-];
-
-const timeoutValue = String(props.heartbeatTimeoutSec);
-
-if (!timeoutOptions.some((option) => option.value === timeoutValue)) {
-    timeoutOptions.push({
-        value: timeoutValue,
-        label: `${props.heartbeatTimeoutSec} seconds`,
-    });
-}
 
 const isCopied = ref(false);
 
@@ -107,35 +86,6 @@ api_key = ${props.apiKey}`;
                     and the activity chart all follow it.
                 </p>
                 <InputError class="mt-2" :message="errors.timezone" />
-            </div>
-
-            <div class="grid gap-2">
-                <Label for="heartbeat_timeout_sec">Keystroke timeout</Label>
-                <Select
-                    name="heartbeat_timeout_sec"
-                    :default-value="timeoutValue"
-                >
-                    <SelectTrigger id="heartbeat_timeout_sec" class="w-full">
-                        <SelectValue placeholder="Select a timeout" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem
-                            v-for="option in timeoutOptions"
-                            :key="option.value"
-                            :value="option.value"
-                        >
-                            {{ option.label }}
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
-                <p class="text-sm text-muted-foreground">
-                    A pause longer than this ends the coding session. Changing
-                    it recalculates your existing sessions.
-                </p>
-                <InputError
-                    class="mt-2"
-                    :message="errors.heartbeat_timeout_sec"
-                />
             </div>
 
             <div class="flex items-center gap-4">

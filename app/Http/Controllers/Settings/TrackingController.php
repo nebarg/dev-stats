@@ -23,7 +23,6 @@ class TrackingController extends Controller
     {
         return Inertia::render('settings/Tracking', [
             'timezone' => $user->timezone,
-            'heartbeatTimeoutSec' => $user->heartbeat_timeout_sec,
             'timezones' => DateTimeZone::listIdentifiers(),
             'apiKey' => $user->api_key,
             'apiUrl' => url('/api/v1'),
@@ -38,10 +37,11 @@ class TrackingController extends Controller
         $user = $request->user();
         $user->fill($request->validated());
 
-        // Both settings shape sessionization (timeout caps gaps, timezone sets
-        // day boundaries), so stored durations and the summaries rolled up
-        // from them go stale when either changes.
-        $isRegenerationNeeded = $user->isDirty(['timezone', 'heartbeat_timeout_sec']);
+        // Timezone sets the day boundaries sessionization buckets into, so
+        // stored durations and the summaries rolled up from them go stale when
+        // it changes. (The keystroke timeout is application-wide config, not a
+        // user setting.)
+        $isRegenerationNeeded = $user->isDirty(['timezone']);
 
         $user->save();
 

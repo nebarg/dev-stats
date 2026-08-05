@@ -25,7 +25,6 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $api_key
  * @property string $timezone
  * @property int $start_of_week
- * @property int $heartbeat_timeout_sec
  * @property CarbonImmutable|null $summaries_generated_until
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -36,7 +35,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'timezone', 'start_of_week', 'heartbeat_timeout_sec'])]
+#[Fillable(['name', 'email', 'password', 'timezone', 'start_of_week'])]
 #[Hidden(['password', 'api_key', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -49,7 +48,6 @@ class User extends Authenticatable implements PasskeyUser
     protected $attributes = [
         'timezone' => 'UTC',
         'start_of_week' => 1,
-        'heartbeat_timeout_sec' => 600,
     ];
 
     protected static function booted(): void
@@ -101,7 +99,6 @@ class User extends Authenticatable implements PasskeyUser
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'start_of_week' => 'integer',
-            'heartbeat_timeout_sec' => 'integer',
             'summaries_generated_until' => AsCalendarDate::class,
         ];
     }

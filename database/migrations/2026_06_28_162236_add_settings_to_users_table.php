@@ -12,14 +12,13 @@ return new class extends Migration
             $table->uuid('api_key')->nullable()->unique()->after('email');
             $table->string('timezone')->default('UTC')->after('api_key');
             $table->unsignedTinyInteger('start_of_week')->default(1)->after('timezone');
-            $table->unsignedInteger('heartbeat_timeout_sec')->default(600)->after('start_of_week');
         });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['api_key', 'timezone', 'start_of_week', 'heartbeat_timeout_sec']);
+            $table->dropColumn(['api_key', 'timezone', 'start_of_week']);
         });
     }
 };

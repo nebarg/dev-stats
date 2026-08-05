@@ -12,12 +12,11 @@ test('a user is assigned a unique api key on creation', function () {
         ->and($a->api_key)->not->toBe($b->api_key);
 });
 
-test('settings default to UTC, Monday, and a 10 minute timeout', function () {
+test('settings default to UTC and Monday', function () {
     $user = User::factory()->create();
 
     expect($user->timezone)->toBe('UTC')
-        ->and($user->start_of_week)->toBe(1)
-        ->and($user->heartbeat_timeout_sec)->toBe(600);
+        ->and($user->start_of_week)->toBe(1);
 });
 
 test('the api key is hidden from array and json output', function () {

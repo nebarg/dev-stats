@@ -57,7 +57,7 @@ test('a gap of at least the timeout starts a new session', function () {
     $base = CarbonImmutable::parse('2026-06-20 10:00:00', 'UTC');
 
     beat($user, $base);
-    beat($user, $base->addMinutes(11));
+    beat($user, $base->addMinutes(16));
 
     expect(GenerateDurations::forUser($user))->toBe(2);
 
@@ -119,8 +119,10 @@ test('regeneration replaces existing durations and is idempotent', function () {
     expect(durationsFor($user))->toHaveCount(1);
 });
 
-test('a custom heartbeat timeout changes how sessions are split', function () {
-    $user = User::factory()->create(['heartbeat_timeout_sec' => 60]);
+test('the configured heartbeat timeout changes how sessions are split', function () {
+    config(['stats.heartbeat_timeout_sec' => 60]);
+
+    $user = User::factory()->create();
     $base = CarbonImmutable::parse('2026-06-20 10:00:00', 'UTC');
 
     beat($user, $base);

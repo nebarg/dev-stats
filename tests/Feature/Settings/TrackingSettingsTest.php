@@ -15,7 +15,6 @@ test('guests are redirected to the login page', function () {
 test('the tracking page shares the current settings and api key', function () {
     $user = User::factory()->create([
         'timezone' => 'Europe/London',
-        'heartbeat_timeout_sec' => 900,
     ]);
 
     $this->actingAs($user)
@@ -24,7 +23,6 @@ test('the tracking page shares the current settings and api key', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('settings/Tracking')
             ->where('timezone', 'Europe/London')
-            ->where('heartbeatTimeoutSec', 900)
             ->where('apiKey', $user->api_key)
             ->has('timezones')
             ->has('apiUrl'));
@@ -36,47 +34,22 @@ test('tracking settings can be updated', function () {
     $this->actingAs($user)
         ->patch(route('tracking.update'), [
             'timezone' => 'Pacific/Auckland',
-            'heartbeat_timeout_sec' => 300,
         ])
         ->assertRedirect(route('tracking.edit'));
 
     $user->refresh();
 
-    expect($user->timezone)->toBe('Pacific/Auckland')
-        ->and($user->heartbeat_timeout_sec)->toBe(300);
+    expect($user->timezone)->toBe('Pacific/Auckland');
 });
 
-test('invalid timezones and out-of-range timeouts are rejected', function (array $input, string $field) {
+test('invalid timezones are rejected', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
         ->from(route('tracking.edit'))
-        ->patch(route('tracking.update'), array_merge([
-            'timezone' => 'UTC',
-            'heartbeat_timeout_sec' => 600,
-        ], $input))
+        ->patch(route('tracking.update'), ['timezone' => 'Middle/Earth'])
         ->assertRedirect(route('tracking.edit'))
-        ->assertSessionHasErrors($field);
-})->with([
-    'made-up timezone' => [['timezone' => 'Middle/Earth'], 'timezone'],
-    'timeout below a minute' => [['heartbeat_timeout_sec' => 30], 'heartbeat_timeout_sec'],
-    'timeout above an hour' => [['heartbeat_timeout_sec' => 7200], 'heartbeat_timeout_sec'],
-]);
-
-test('changing the timeout regenerates durations from heartbeats', function () {
-    $user = User::factory()->create(['heartbeat_timeout_sec' => 600]);
-
-    Heartbeat::factory()->forUser($user)->create([
-        'recorded_at' => CarbonImmutable::parse('2026-06-30 10:00:00', 'UTC'),
-    ]);
-
-    $this->actingAs($user)->patch(route('tracking.update'), [
-        'timezone' => $user->timezone,
-        'heartbeat_timeout_sec' => 300,
-    ]);
-
-    expect(Duration::query()->where('user_id', $user->id)->pluck('timeout_seconds')->all())
-        ->toBe([300]);
+        ->assertSessionHasErrors('timezone');
 });
 
 test('changing the timezone wipes and rebuilds stored summaries', function () {
@@ -102,7 +75,6 @@ test('changing the timezone wipes and rebuilds stored summaries', function () {
 
     $this->actingAs($user)->patch(route('tracking.update'), [
         'timezone' => 'Pacific/Auckland',
-        'heartbeat_timeout_sec' => $user->heartbeat_timeout_sec,
     ]);
 
     $keys = SummaryItem::query()->where('user_id', $user->id)->where('type', 'project')->pluck('key');
@@ -118,7 +90,6 @@ test('an unchanged submission leaves durations untouched', function () {
 
     $this->actingAs($user)->patch(route('tracking.update'), [
         'timezone' => $user->timezone,
-        'heartbeat_timeout_sec' => $user->heartbeat_timeout_sec,
     ]);
 
     expect(Duration::query()->where('user_id', $user->id)->count())->toBe(0);

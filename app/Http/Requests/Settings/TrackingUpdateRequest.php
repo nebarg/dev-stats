@@ -16,7 +16,6 @@ class TrackingUpdateRequest extends FormRequest
     {
         return [
             'timezone' => ['required', 'string', 'timezone'],
-            'heartbeat_timeout_sec' => ['required', 'integer', 'between:60,3600'],
         ];
     }
 }
