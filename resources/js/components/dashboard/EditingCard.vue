@@ -95,15 +95,6 @@ const tiles = computed<Tile[]>(() => {
                         </span>
                     </div>
                 </div>
-                <div
-                    v-if="writeShare !== null"
-                    class="h-1.5 overflow-hidden rounded-full bg-muted"
-                >
-                    <div
-                        class="h-full rounded-full bg-primary"
-                        :style="{ width: `${writeShare * 100}%` }"
-                    />
-                </div>
             </div>
         </CardContent>
     </Card>

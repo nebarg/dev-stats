@@ -121,15 +121,6 @@ const tiles = computed<Tile[]>(() => {
                         </span>
                     </div>
                 </div>
-                <div
-                    v-if="aiShare !== null"
-                    class="h-1.5 overflow-hidden rounded-full bg-muted"
-                >
-                    <div
-                        class="h-full rounded-full bg-primary"
-                        :style="{ width: `${aiShare * 100}%` }"
-                    />
-                </div>
             </div>
         </CardContent>
     </Card>
