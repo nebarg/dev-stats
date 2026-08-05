@@ -31,6 +31,13 @@ class BuildInsightsStats
     private const int TOP_LIMIT = 8;
 
     /**
+     * The rolling trailing-year range; the alternative ranges are calendar
+     * years ("2025", "2026", …). Named to avoid clashing with the dashboard
+     * trait's own DEFAULT_RANGE.
+     */
+    private const string ROLLING_RANGE = '12m';
+
+    /**
      * @var array<int, string>
      */
     private const array WEEKDAY_LABELS = [1 => 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -38,21 +45,31 @@ class BuildInsightsStats
     /**
      * @return array<string, mixed>
      */
-    public static function forUser(User $user): array
+    public static function forUser(User $user, string $range = self::ROLLING_RANGE): array
     {
         $timezone = $user->timezone;
-        $today = CarbonImmutable::now($timezone)->startOfDay();
-        $from = $today->subDays(self::WINDOW_DAYS - 1);
+        $now = CarbonImmutable::now($timezone)->startOfDay();
 
-        $coveredUntil = self::summariesCoveredUntil($user, $today);
-        $storedUntil = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from) ? $coveredUntil : null;
+        $ranges = self::availableRanges($user, $now);
+        $range = in_array($range, $ranges, true) ? $range : self::ROLLING_RANGE;
+
+        // `$to` is the last day shown (Dec 31 for a past year, so the calendar
+        // renders the whole year); `$dataEnd` caps that at today, since nothing
+        // beyond today has data and averages must not divide by future days.
+        [$from, $to] = self::resolveBounds($range, $now, $timezone);
+        $dataEnd = $to->min($now);
+
+        $coveredUntil = self::summariesCoveredUntil($user, $now);
+        $storedUntil = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from)
+            ? $coveredUntil->min($dataEnd)
+            : null;
         $liveFrom = $storedUntil !== null ? $storedUntil->addDay() : $from;
 
         $liveDurations = Duration::query()
             ->where('user_id', $user->id)
             ->where('started_at', '>=', $liveFrom->setTimezone('UTC'))
-            ->where('started_at', '<', $today->addDay()->setTimezone('UTC'))
-            ->get(['started_at', 'duration_seconds', 'category']);
+            ->where('started_at', '<', $dataEnd->addDay()->setTimezone('UTC'))
+            ->get(['started_at', 'duration_seconds', 'project', 'category']);
 
         $perDay = self::mergeTotals(
             $storedUntil !== null ? self::storedSecondsPerDay($user, $from, $storedUntil) : [],
@@ -67,20 +84,122 @@ class BuildInsightsStats
             ),
         );
 
-        $projectTotals = self::projectLineTotals($user, $from, $storedUntil, $liveFrom, $today);
-        $fileTotals = self::fileLineTotals($user, $from, $today);
+        $projectTotals = self::projectLineTotals($user, $from, $storedUntil, $liveFrom, $dataEnd);
+        $fileTotals = self::fileLineTotals($user, $from, $dataEnd);
+
+        // Time-based rankings work for every year; the line-authorship rankings
+        // below only have data from 2026 on, when the CLI began sending it.
+        $projectTime = self::mergeTotals(
+            $storedUntil !== null ? self::storedBucketTotals($user, $from, $storedUntil, 'project') : [],
+            self::durationTotals($liveDurations, 'project'),
+        );
 
         return [
+            'range' => $range,
+            'ranges' => $ranges,
             'from' => $from->toDateString(),
-            'to' => $today->toDateString(),
-            'calendar' => self::activity($perDay, $from, $today),
-            'ai_calendar' => self::aiCalendar($user, $from, $storedUntil, $liveFrom, $today, $timezone),
-            'weekdays' => self::weekdayAverages($perDay, $aiPerDay, $from, $today),
+            'to' => $to->toDateString(),
+            'calendar' => self::activity($perDay, $from, $to),
+            'ai_calendar' => self::aiCalendar($user, $from, $storedUntil, $liveFrom, $dataEnd, $to, $timezone),
+            'weekdays' => self::weekdayAverages($perDay, $aiPerDay, $from, $dataEnd),
+            'top_projects' => self::topBuckets($projectTime, 'No project'),
+            'top_files' => self::fileTimeTotals($user, $from, $dataEnd, $timezone),
             'top_ai_projects' => self::top($projectTotals, 'ai_lines'),
             'top_human_projects' => self::top($projectTotals, 'human_lines'),
             'top_ai_files' => self::top($fileTotals, 'ai_lines'),
             'top_human_files' => self::top($fileTotals, 'human_lines'),
         ];
+    }
+
+    /**
+     * Time per file over the period, live from heartbeats: the gap to each
+     * heartbeat, when under the timeout and within the same day, is credited to
+     * the file of the heartbeat that opened it (non-file heartbeats break the
+     * chain). Ranked by time — the one authorship-independent file signal, so
+     * it works for pre-2026 years too.
+     *
+     * @return array<int, array{key: string, seconds: int}>
+     */
+    private static function fileTimeTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd, string $timezone): array
+    {
+        $timeoutMs = (int) config('stats.heartbeat_timeout_sec') * 1000;
+
+        $files = [];
+        $previousEntity = null;
+        $previousTimeMs = 0;
+        $previousDay = null;
+
+        $heartbeats = Heartbeat::query()
+            ->where('user_id', $user->id)
+            ->where('recorded_at', '>=', $from->setTimezone('UTC'))
+            ->where('recorded_at', '<', $dataEnd->addDay()->setTimezone('UTC'))
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->lazy();
+
+        foreach ($heartbeats as $heartbeat) {
+            $timeMs = (int) $heartbeat->recorded_at->getPreciseTimestamp(3);
+            $day = $heartbeat->recorded_at->setTimezone($timezone)->toDateString();
+
+            if ($previousEntity !== null && $previousDay === $day) {
+                $gapMs = $timeMs - $previousTimeMs;
+
+                if ($gapMs > 0 && $gapMs < $timeoutMs) {
+                    $files[$previousEntity] = ($files[$previousEntity] ?? 0) + $gapMs;
+                }
+            }
+
+            $isFile = $heartbeat->entity_type === 'file' && $heartbeat->entity !== null;
+            $previousEntity = $isFile ? $heartbeat->entity : null;
+            $previousTimeMs = $timeMs;
+            $previousDay = $day;
+        }
+
+        return collect($files)
+            ->map(static fn (int $milliseconds, string $entity): array => [
+                'key' => basename(str_replace('\\', '/', $entity)),
+                'seconds' => (int) round($milliseconds / 1000),
+            ])
+            ->sortByDesc('seconds')
+            ->take(self::TOP_LIMIT)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The selectable ranges: the rolling trailing year, then each calendar year
+     * from the current one back to the user's first tracked year (descending).
+     *
+     * @return array<int, string>
+     */
+    private static function availableRanges(User $user, CarbonImmutable $now): array
+    {
+        $first = Duration::query()->where('user_id', $user->id)->min('started_at');
+
+        $firstYear = $first !== null
+            ? CarbonImmutable::parse($first, 'UTC')->setTimezone($user->timezone)->year
+            : $now->year;
+
+        $years = array_map('strval', range($now->year, $firstYear));
+
+        return [self::ROLLING_RANGE, ...$years];
+    }
+
+    /**
+     * Resolve a range to its first and last day (both midnight in the user's
+     * timezone). A four-digit year spans that whole calendar year.
+     *
+     * @return array{0: CarbonImmutable, 1: CarbonImmutable}
+     */
+    private static function resolveBounds(string $range, CarbonImmutable $now, string $timezone): array
+    {
+        if ($range === self::ROLLING_RANGE) {
+            return [$now->subDays(self::WINDOW_DAYS - 1), $now];
+        }
+
+        $from = CarbonImmutable::create((int) $range, 1, 1, 0, 0, 0, $timezone);
+
+        return [$from, $from->addYear()->subDay()];
     }
 
     /**
@@ -91,11 +210,11 @@ class BuildInsightsStats
      *
      * @return array<int, array{date: string, ai_lines: int, human_lines: int}>
      */
-    private static function aiCalendar(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $today, string $timezone): array
+    private static function aiCalendar(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $dataEnd, CarbonImmutable $to, string $timezone): array
     {
         $perDay = $storedUntil !== null ? self::storedLinesPerDay($user, $from, $storedUntil) : [];
 
-        $heartbeats = self::lineHeartbeats($user, $liveFrom, $today)
+        $heartbeats = self::lineHeartbeats($user, $liveFrom, $dataEnd)
             ->select(['recorded_at', 'ai_line_changes', 'human_line_changes'])
             ->lazy();
 
@@ -109,7 +228,7 @@ class BuildInsightsStats
 
         $calendar = [];
 
-        for ($day = $from; $day <= $today; $day = $day->addDay()) {
+        for ($day = $from; $day <= $to; $day = $day->addDay()) {
             $date = $day->toDateString();
             $calendar[] = [
                 'date' => $date,
@@ -130,13 +249,13 @@ class BuildInsightsStats
      * @param  array<string, int>  $aiPerDay
      * @return array<int, array{label: string, average_seconds: int, ai_average_seconds: int}>
      */
-    private static function weekdayAverages(array $perDay, array $aiPerDay, CarbonImmutable $from, CarbonImmutable $today): array
+    private static function weekdayAverages(array $perDay, array $aiPerDay, CarbonImmutable $from, CarbonImmutable $dataEnd): array
     {
         $totals = array_fill(1, 7, 0);
         $aiTotals = array_fill(1, 7, 0);
         $occurrences = array_fill(1, 7, 0);
 
-        for ($day = $from; $day <= $today; $day = $day->addDay()) {
+        for ($day = $from; $day <= $dataEnd; $day = $day->addDay()) {
             $weekday = $day->dayOfWeekIso;
             $date = $day->toDateString();
 
@@ -161,11 +280,11 @@ class BuildInsightsStats
      *
      * @return array<int, array{key: string, ai_lines: int, human_lines: int}>
      */
-    private static function projectLineTotals(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $today): array
+    private static function projectLineTotals(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $dataEnd): array
     {
         $totals = $storedUntil !== null ? self::storedProjectLineTotals($user, $from, $storedUntil) : [];
 
-        $rows = self::lineHeartbeats($user, $liveFrom, $today)
+        $rows = self::lineHeartbeats($user, $liveFrom, $dataEnd)
             ->groupBy('project')
             ->select('project')
             ->selectRaw(
@@ -197,9 +316,9 @@ class BuildInsightsStats
      *
      * @return array<int, array<string, mixed>>
      */
-    private static function fileLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $today): array
+    private static function fileLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd): array
     {
-        $rows = self::lineHeartbeats($user, $from, $today)
+        $rows = self::lineHeartbeats($user, $from, $dataEnd)
             ->where('entity_type', 'file')
             ->groupBy(['entity', 'project'])
             ->select(['entity', 'project'])
@@ -211,7 +330,7 @@ class BuildInsightsStats
 
         return $rows
             ->map(static fn ($row): array => [
-                'key' => basename($row->entity),
+                'key' => basename(str_replace('\\', '/', $row->entity)),
                 'ai_lines' => (int) $row->ai_lines,
                 'human_lines' => (int) $row->human_lines,
                 'path' => $row->entity,
@@ -223,12 +342,12 @@ class BuildInsightsStats
     /**
      * @return Builder<Heartbeat>
      */
-    private static function lineHeartbeats(User $user, CarbonImmutable $from, CarbonImmutable $today): Builder
+    private static function lineHeartbeats(User $user, CarbonImmutable $from, CarbonImmutable $end): Builder
     {
         return Heartbeat::query()
             ->where('user_id', $user->id)
             ->where('recorded_at', '>=', $from->setTimezone('UTC'))
-            ->where('recorded_at', '<', $today->addDay()->setTimezone('UTC'))
+            ->where('recorded_at', '<', $end->addDay()->setTimezone('UTC'))
             ->where(static function (Builder $query): void {
                 $query->whereNotNull('ai_line_changes')->orWhereNotNull('human_line_changes');
             });

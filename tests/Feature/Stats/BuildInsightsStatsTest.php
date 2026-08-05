@@ -199,3 +199,68 @@ test('top files keep the full path and project behind a basename key', function 
         ->and($files[0]['project'])->toBe('app')
         ->and($files[0]['ai_lines'])->toBe(25);
 });
+
+test('a calendar year range spans that whole year and excludes other years', function () {
+    $user = User::factory()->create();
+
+    makeInsightsDuration($user, '2025-03-10 09:00:00', 3600);
+    makeInsightsDuration($user, '2025-11-20 09:00:00', 1800);
+    // Outside 2025 — must be excluded.
+    makeInsightsDuration($user, '2026-06-30 09:00:00', 9999);
+
+    $stats = BuildInsightsStats::forUser($user, '2025');
+
+    $byDate = collect($stats['calendar'])->keyBy('date');
+
+    expect($stats['range'])->toBe('2025')
+        ->and($stats['from'])->toBe('2025-01-01')
+        ->and($stats['to'])->toBe('2025-12-31')
+        ->and($stats['calendar'])->toHaveCount(365)
+        ->and(collect($stats['calendar'])->sum('seconds'))->toBe(5400)
+        ->and($byDate['2025-03-10']['seconds'])->toBe(3600)
+        ->and($byDate['2025-11-20']['seconds'])->toBe(1800);
+});
+
+test('available ranges list the trailing year then each year back to first activity', function () {
+    $user = User::factory()->create();
+
+    makeInsightsDuration($user, '2024-05-01 09:00:00', 60);
+    makeInsightsDuration($user, '2026-06-30 09:00:00', 60);
+
+    $stats = BuildInsightsStats::forUser($user);
+
+    expect($stats['range'])->toBe('12m')
+        ->and($stats['ranges'])->toBe(['12m', '2026', '2025', '2024']);
+});
+
+test('an unknown range falls back to the trailing year', function () {
+    $user = User::factory()->create();
+
+    makeInsightsDuration($user, '2026-06-30 09:00:00', 60);
+
+    $stats = BuildInsightsStats::forUser($user, 'nonsense');
+
+    expect($stats['range'])->toBe('12m')
+        ->and($stats['from'])->toBe('2025-07-01')
+        ->and($stats['to'])->toBe('2026-06-30');
+});
+
+test('top projects and files rank by time and work without line data', function () {
+    $user = User::factory()->create();
+
+    // Project time comes from durations (no line-authorship needed).
+    makeInsightsDuration($user, '2026-06-29 09:00:00', 3600, ['project' => 'alpha']);
+    makeInsightsDuration($user, '2026-06-29 11:00:00', 1200, ['project' => 'beta']);
+
+    // File time is credited from the gap between two same-file heartbeats.
+    makeInsightsHeartbeat($user, '2026-06-30 09:00:00', ['entity' => '/app/Big.php', 'entity_type' => 'file']);
+    makeInsightsHeartbeat($user, '2026-06-30 09:02:00', ['entity' => '/app/Big.php', 'entity_type' => 'file']);
+
+    $stats = BuildInsightsStats::forUser($user);
+
+    expect($stats['top_projects'])->toBe([
+        ['key' => 'alpha', 'seconds' => 3600],
+        ['key' => 'beta', 'seconds' => 1200],
+    ])
+        ->and($stats['top_files'])->toBe([['key' => 'Big.php', 'seconds' => 120]]);
+});

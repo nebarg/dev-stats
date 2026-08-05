@@ -1,22 +1,29 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { cn } from '@/lib/utils';
 
-defineProps<{
+const props = defineProps<{
     ranges: string[];
     current: string;
     url: (range: string) => string;
+    labels?: Record<string, string>;
 }>();
 
-const rangeLabels: Record<string, string> = {
+const defaultLabels: Record<string, string> = {
     '7d': '7 days',
     '30d': '30 days',
     all: 'All time',
 };
+
+const rangeLabels = computed<Record<string, string>>(() => ({
+    ...defaultLabels,
+    ...(props.labels ?? {}),
+}));
 </script>
 
 <template>
-    <div class="flex items-center gap-1 rounded-lg border bg-card p-1">
+    <div class="flex flex-wrap items-center gap-1 rounded-lg border bg-card p-1">
         <Link
             v-for="key in ranges"
             :key="key"

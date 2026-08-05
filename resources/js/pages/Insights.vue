@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
 import CalendarHeatmap from '@/components/dashboard/CalendarHeatmap.vue';
+import RangeSelector from '@/components/dashboard/RangeSelector.vue';
 import TopLinesCard from '@/components/dashboard/TopLinesCard.vue';
 import WeekdayAveragesCard from '@/components/dashboard/WeekdayAveragesCard.vue';
 import {
@@ -40,6 +42,10 @@ const activityDays = computed<CalendarHeatmapDay[]>(() => {
     }));
 });
 
+const secondsByDate = computed(
+    () => new Map(props.stats.calendar.map((day) => [day.date, day.seconds])),
+);
+
 const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
     props.stats.ai_calendar.map((day) => {
         const ai = Math.max(0, day.ai_lines);
@@ -47,10 +53,17 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
         const total = ai + human;
 
         if (total === 0) {
+            // Line-authorship data only exists from 2026. Before then (and any
+            // other day with coding activity but no line data) we treat the day
+            // as fully human; genuinely idle days stay blank.
+            const isActive = (secondsByDate.value.get(day.date) ?? 0) > 0;
+
             return {
                 date: day.date,
-                level: 0,
-                title: `${formatDayLabel(day.date)} — no line data`,
+                level: isActive ? 1 : 0,
+                title: isActive
+                    ? `${formatDayLabel(day.date)} — 100% human (no AI line data)`
+                    : `${formatDayLabel(day.date)} — no activity`,
             };
         }
 
@@ -73,7 +86,12 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-xl font-semibold tracking-tight">Insights</h1>
-            <span class="text-sm text-muted-foreground">Last 12 months</span>
+            <RangeSelector
+                :ranges="stats.ranges"
+                :current="stats.range"
+                :labels="{ '12m': 'Last 12 months' }"
+                :url="(range) => insights.url({ query: { range } })"
+            />
         </div>
 
         <CalendarHeatmap
@@ -91,29 +109,34 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
         <WeekdayAveragesCard :weekdays="stats.weekdays" />
 
         <div class="grid gap-4 md:grid-cols-2">
+            <BreakdownCard title="Top projects" :items="stats.top_projects" />
+            <BreakdownCard title="Top files" :items="stats.top_files" />
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
             <TopLinesCard
                 title="Top AI-assisted projects"
                 :items="stats.top_ai_projects"
                 highlight="ai"
-                empty-message="No AI line data in the last year."
+                empty-message="No AI line changes recorded for this period."
             />
             <TopLinesCard
                 title="Top human-edited projects"
                 :items="stats.top_human_projects"
                 highlight="human"
-                empty-message="No human line data in the last year."
+                empty-message="No human line changes recorded for this period."
             />
             <TopLinesCard
                 title="Top AI-assisted files"
                 :items="stats.top_ai_files"
                 highlight="ai"
-                empty-message="No AI line data in the last year."
+                empty-message="No AI line changes recorded for this period."
             />
             <TopLinesCard
                 title="Top human-edited files"
                 :items="stats.top_human_files"
                 highlight="human"
-                empty-message="No human line data in the last year."
+                empty-message="No human line changes recorded for this period."
             />
         </div>
     </div>

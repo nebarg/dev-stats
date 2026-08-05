@@ -75,11 +75,15 @@ export type LineTotals = {
 };
 
 export type InsightsStats = {
+    range: string;
+    ranges: string[];
     from: string;
     to: string;
     calendar: ActivityDay[];
     ai_calendar: AiCalendarDay[];
     weekdays: WeekdayAverage[];
+    top_projects: BreakdownItem[];
+    top_files: BreakdownItem[];
     top_ai_projects: LineTotals[];
     top_human_projects: LineTotals[];
     top_ai_files: LineTotals[];
