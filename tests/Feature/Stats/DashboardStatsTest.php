@@ -1,11 +1,11 @@
 <?php
 
-use App\Actions\Stats\BuildDashboardStats;
 use App\Models\AiPrice;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\SummaryItem;
 use App\Models\User;
+use App\Stats\DashboardStats;
 use Carbon\CarbonImmutable;
 
 /**
@@ -41,7 +41,7 @@ test('it totals durations in range and reports today separately', function () {
     makeDuration($user, CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'), 1800);
     makeDuration($user, CarbonImmutable::parse('2026-06-10 09:00:00', 'UTC'), 9999);
 
-    $stats = BuildDashboardStats::forUser($user, '7d');
+    $stats = app(DashboardStats::class)->build($user, '7d');
 
     expect($stats['range'])->toBe('7d')
         ->and($stats['from'])->toBe('2026-06-24')
@@ -72,7 +72,7 @@ test('it treats range boundaries as half-open: start inclusive, end exclusive', 
         'ai_line_changes' => 999,
     ]);
 
-    $stats = BuildDashboardStats::forUser($user, '7d');
+    $stats = app(DashboardStats::class)->build($user, '7d');
 
     expect($stats['total_seconds'])->toBe(222)
         ->and($stats['ai']['ai_lines'])->toBe(10);
@@ -85,7 +85,7 @@ test('it builds breakdowns sorted by total time descending', function () {
     makeDuration($user, CarbonImmutable::parse('2026-06-30 10:00:00', 'UTC'), 1200, ['project' => 'beta']);
     makeDuration($user, CarbonImmutable::parse('2026-06-29 10:00:00', 'UTC'), 300, ['project' => 'alpha']);
 
-    $projects = BuildDashboardStats::forUser($user, '7d')['breakdowns']['projects'];
+    $projects = app(DashboardStats::class)->build($user, '7d')['breakdowns']['projects'];
 
     expect($projects)->toBe([
         ['key' => 'beta', 'seconds' => 1200],
@@ -101,7 +101,7 @@ test('it labels empty project and language buckets and defaults unknown ranges',
         'language' => null,
     ]);
 
-    $stats = BuildDashboardStats::forUser($user, 'nonsense');
+    $stats = app(DashboardStats::class)->build($user, 'nonsense');
 
     expect($stats['range'])->toBe('7d')
         ->and($stats['breakdowns']['projects'])->toBe([['key' => 'No project', 'seconds' => 600]])
@@ -119,7 +119,7 @@ test('it folds non-languages and empty languages into a single Other bucket', fu
     makeDuration($user, $day->addMinutes(30), 60, ['language' => 'Text']);
     makeDuration($user, $day->addMinutes(40), 30, ['language' => null]);
 
-    $stats = BuildDashboardStats::forUser($user, '30d');
+    $stats = app(DashboardStats::class)->build($user, '30d');
 
     expect($stats['breakdowns']['languages'])->toBe([
         ['key' => 'PHP', 'seconds' => 600],
@@ -134,7 +134,7 @@ test('it buckets days in the user timezone', function () {
     // 13:00 UTC on the 29th is 01:00 on the 30th in Auckland (UTC+12) — i.e. "today".
     makeDuration($user, CarbonImmutable::parse('2026-06-29 13:00:00', 'UTC'), 600);
 
-    $stats = BuildDashboardStats::forUser($user, '7d');
+    $stats = app(DashboardStats::class)->build($user, '7d');
 
     expect($stats['today_seconds'])->toBe(600);
 });
@@ -146,7 +146,7 @@ test('it breaks down time by category', function () {
     makeDuration($user, CarbonImmutable::parse('2026-06-30 10:00:00', 'UTC'), 600, ['category' => 'coding']);
     makeDuration($user, CarbonImmutable::parse('2026-06-29 09:00:00', 'UTC'), 300, ['category' => null]);
 
-    $categories = BuildDashboardStats::forUser($user, '7d')['breakdowns']['categories'];
+    $categories = app(DashboardStats::class)->build($user, '7d')['breakdowns']['categories'];
 
     expect($categories)->toBe([
         ['key' => 'AI coding', 'seconds' => 1200],
@@ -184,7 +184,7 @@ test('it sums ai line and token totals from heartbeats in range', function () {
         'ai_output_tokens' => 999,
     ]);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['ai'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['ai'])->toBe([
         'ai_lines' => 100,
         'human_lines' => 30,
         'input_tokens' => 1000,
@@ -218,7 +218,7 @@ test('it counts ai sessions and prompt events', function () {
         'ai_session' => 'session-b',
     ]);
 
-    $ai = BuildDashboardStats::forUser($user, '7d')['ai'];
+    $ai = app(DashboardStats::class)->build($user, '7d')['ai'];
 
     expect($ai['sessions'])->toBe(2)
         ->and($ai['prompts'])->toBe(2)
@@ -266,7 +266,7 @@ test('it breaks down ai activity by agent model from the user agent', function (
         'ai_line_changes' => 999,
     ]);
 
-    $ai = BuildDashboardStats::forUser($user, '7d')['ai'];
+    $ai = app(DashboardStats::class)->build($user, '7d')['ai'];
 
     // Opus: (1000 in × $1000/M) + (100 out × $2000/M) = $1.20. The unpriced
     // gpt-5 agent carries no cost and stays out of the total — unknown
@@ -305,7 +305,7 @@ test('it prices tokens at the rate in effect on their day', function () {
         'ai_input_tokens' => 1_000_000,
     ]);
 
-    $ai = BuildDashboardStats::forUser($user, '7d')['ai'];
+    $ai = app(DashboardStats::class)->build($user, '7d')['ai'];
 
     expect($ai['agents'][0]['cost_cents'])->toBe(300)
         ->and($ai['estimated_cost_cents'])->toBe(300);
@@ -314,7 +314,7 @@ test('it prices tokens at the rate in effect on their day', function () {
 test('it returns zeroed ai totals with no heartbeats', function () {
     $user = User::factory()->create();
 
-    expect(BuildDashboardStats::forUser($user)['ai'])->toBe([
+    expect(app(DashboardStats::class)->build($user)['ai'])->toBe([
         'ai_lines' => 0,
         'human_lines' => 0,
         'input_tokens' => 0,
@@ -359,7 +359,7 @@ test('it summarises write and read events and agent-file activity', function () 
         'is_write' => true,
     ]);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['editing'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['editing'])->toBe([
         'write_events' => 2,
         'read_events' => 2,
         'agent_write_events' => 1,
@@ -378,7 +378,7 @@ test('it merges nearby durations into focus blocks and counts mid-flow switches'
     // A two-hour gap breaks the block; this switch back doesn't count.
     makeDuration($user, CarbonImmutable::parse('2026-06-30 12:00:00', 'UTC'), 600, ['project' => 'app']);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['focus'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['focus'])->toBe([
         'longest_block_seconds' => 1500,
         'deep_work_seconds' => 1500,
         'deep_work_blocks' => 1,
@@ -398,7 +398,7 @@ test('it computes current and longest streaks of qualifying days', function () {
     makeDuration($user, CarbonImmutable::parse('2026-06-24 09:00:00', 'UTC'), 1200);
     makeDuration($user, CarbonImmutable::parse('2026-06-23 09:00:00', 'UTC'), 1200);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['streak'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['streak'])->toBe([
         'current_days' => 2,
         'longest_days' => 3,
     ]);
@@ -413,7 +413,7 @@ test('it keeps a streak alive on a quiet today and ignores days under the floor'
     makeDuration($user, CarbonImmutable::parse('2026-06-29 09:00:00', 'UTC'), 1200);
     makeDuration($user, CarbonImmutable::parse('2026-06-28 09:00:00', 'UTC'), 1200);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['streak'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['streak'])->toBe([
         'current_days' => 2,
         'longest_days' => 2,
     ]);
@@ -438,7 +438,7 @@ test('it reads stored summaries for covered days and live durations beyond them'
 
     makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 3600);
 
-    $stats = BuildDashboardStats::forUser($user, '7d');
+    $stats = app(DashboardStats::class)->build($user, '7d');
 
     expect($stats['total_seconds'])->toBe(5400)
         ->and($stats['today_seconds'])->toBe(3600)
@@ -464,7 +464,7 @@ test('it merges stored and live totals for the same breakdown key', function () 
 
     makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 900);
 
-    $stats = BuildDashboardStats::forUser($user, '7d');
+    $stats = app(DashboardStats::class)->build($user, '7d');
 
     expect($stats['total_seconds'])->toBe(1500)
         ->and($stats['breakdowns']['projects'])->toBe([['key' => 'app', 'seconds' => 1500]]);
@@ -487,7 +487,7 @@ test('it computes streaks from stored summaries and live durations together', fu
 
     makeDuration($user, CarbonImmutable::parse('2026-06-30 09:00:00', 'UTC'), 1200);
 
-    expect(BuildDashboardStats::forUser($user, '7d')['streak'])->toBe([
+    expect(app(DashboardStats::class)->build($user, '7d')['streak'])->toBe([
         'current_days' => 3,
         'longest_days' => 3,
     ]);
@@ -496,7 +496,7 @@ test('it computes streaks from stored summaries and live durations together', fu
 test('it returns zeroed stats with no durations', function () {
     $user = User::factory()->create();
 
-    $stats = BuildDashboardStats::forUser($user);
+    $stats = app(DashboardStats::class)->build($user);
 
     expect($stats['total_seconds'])->toBe(0)
         ->and($stats['daily_average_seconds'])->toBe(0)

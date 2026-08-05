@@ -1,96 +1,89 @@
 <?php
 
-namespace App\Actions\Stats;
+namespace App\Stats;
 
-use App\Actions\Stats\Concerns\AggregatesDurations;
-use App\Actions\Stats\Concerns\ReadsSummaries;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\User;
+use App\Stats\Support\Aggregation;
+use App\Stats\Support\StoredLiveWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Builds the insights view-model over a fixed trailing year: calendar heatmaps
- * (coding time and AI share per day), weekday averages with an AI-time
- * portion, and authorship rankings (top AI-assisted / human-edited projects
- * and files by net line changes).
+ * Builds the insights view-model over a selectable range (a rolling trailing
+ * year or a calendar year): calendar heatmaps (coding time and AI share per
+ * day), weekday averages with an AI-time portion, and authorship rankings.
  *
- * Covered past days read the stored `summary_items`/`daily_metrics`; the
- * uncovered tail (always including today) is computed live and merged. File
- * rankings stay fully live — per-file detail is deliberately not
- * pre-aggregated.
+ * Covered past days read stored summaries; the uncovered tail (always including
+ * today) is computed live and merged. File rankings stay fully live — per-file
+ * detail is deliberately not pre-aggregated.
  */
-class BuildInsightsStats
+class InsightsStats
 {
-    use AggregatesDurations;
-    use ReadsSummaries;
-
     private const int WINDOW_DAYS = 365;
 
     private const int TOP_LIMIT = 8;
 
-    /**
-     * The rolling trailing-year range; the alternative ranges are calendar
-     * years ("2025", "2026", …). Named to avoid clashing with the dashboard
-     * trait's own DEFAULT_RANGE.
-     */
-    private const string ROLLING_RANGE = '12m';
+    /** The rolling trailing-year range; the alternatives are calendar years. */
+    public const string ROLLING_RANGE = '12m';
 
     /**
      * @var array<int, string>
      */
     private const array WEEKDAY_LABELS = [1 => 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+    public function __construct(
+        private readonly SummaryReader $summaries,
+        private readonly Aggregation $aggregation,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
-    public static function forUser(User $user, string $range = self::ROLLING_RANGE): array
+    public function build(User $user, string $range = self::ROLLING_RANGE): array
     {
         $timezone = $user->timezone;
         $now = CarbonImmutable::now($timezone)->startOfDay();
 
-        $ranges = self::availableRanges($user, $now);
+        $ranges = $this->availableRanges($user, $now);
         $range = in_array($range, $ranges, true) ? $range : self::ROLLING_RANGE;
 
         // `$to` is the last day shown (Dec 31 for a past year, so the calendar
         // renders the whole year); `$dataEnd` caps that at today, since nothing
         // beyond today has data and averages must not divide by future days.
-        [$from, $to] = self::resolveBounds($range, $now, $timezone);
+        [$from, $to] = $this->resolveBounds($range, $now, $timezone);
         $dataEnd = $to->min($now);
 
-        $coveredUntil = self::summariesCoveredUntil($user, $now);
-        $storedUntil = $coveredUntil !== null && $coveredUntil->greaterThanOrEqualTo($from)
-            ? $coveredUntil->min($dataEnd)
-            : null;
-        $liveFrom = $storedUntil !== null ? $storedUntil->addDay() : $from;
+        $coveredUntil = $this->summaries->coveredUntil($user, $now);
+        $window = StoredLiveWindow::resolve($coveredUntil, $from, $dataEnd);
 
         $liveDurations = Duration::query()
             ->forUser($user)
-            ->startedBetween($liveFrom, $dataEnd)
+            ->startedBetween($window->liveFrom(), $dataEnd)
             ->get(['started_at', 'duration_seconds', 'project', 'category']);
 
-        $perDay = self::mergeTotals(
-            $storedUntil !== null ? self::storedSecondsPerDay($user, $from, $storedUntil) : [],
-            self::secondsPerDay($liveDurations, $timezone),
+        $perDay = $this->aggregation->mergeTotals(
+            $window->hasStored() ? $this->summaries->secondsPerDay($user, $from, $window->storedUntil) : [],
+            $this->aggregation->secondsPerDay($liveDurations, $timezone),
         );
 
-        $aiPerDay = self::mergeTotals(
-            $storedUntil !== null ? self::storedCategorySecondsPerDay($user, $from, $storedUntil, 'ai coding') : [],
-            self::secondsPerDay(
+        $aiPerDay = $this->aggregation->mergeTotals(
+            $window->hasStored() ? $this->summaries->categorySecondsPerDay($user, $from, $window->storedUntil, 'ai coding') : [],
+            $this->aggregation->secondsPerDay(
                 $liveDurations->filter(static fn (Duration $duration): bool => $duration->category === 'ai coding'),
                 $timezone,
             ),
         );
 
-        $projectTotals = self::projectLineTotals($user, $from, $storedUntil, $liveFrom, $dataEnd);
-        $fileTotals = self::fileLineTotals($user, $from, $dataEnd);
+        $projectTotals = $this->projectLineTotals($user, $window);
+        $fileTotals = $this->fileLineTotals($user, $from, $dataEnd);
 
-        // Time-based rankings work for every year; the line-authorship rankings
-        // below only have data from 2026 on, when the CLI began sending it.
-        $projectTime = self::mergeTotals(
-            $storedUntil !== null ? self::storedBucketTotals($user, $from, $storedUntil, 'project') : [],
-            self::durationTotals($liveDurations, 'project'),
+        // Time rankings work for every year; the line-authorship rankings below
+        // only have data from 2026 on, when the CLI began sending it.
+        $projectTime = $this->aggregation->mergeTotals(
+            $window->hasStored() ? $this->summaries->bucketTotals($user, $from, $window->storedUntil, 'project') : [],
+            $this->aggregation->bucketTotals($liveDurations, 'project'),
         );
 
         return [
@@ -98,15 +91,15 @@ class BuildInsightsStats
             'ranges' => $ranges,
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
-            'calendar' => self::activity($perDay, $from, $to),
-            'ai_calendar' => self::aiCalendar($user, $from, $storedUntil, $liveFrom, $dataEnd, $to, $timezone),
-            'weekdays' => self::weekdayAverages($perDay, $aiPerDay, $from, $dataEnd),
-            'top_projects' => self::topBuckets($projectTime, 'No project'),
-            'top_files' => self::fileTimeTotals($user, $from, $dataEnd, $timezone),
-            'top_ai_projects' => self::top($projectTotals, 'ai_lines'),
-            'top_human_projects' => self::top($projectTotals, 'human_lines'),
-            'top_ai_files' => self::top($fileTotals, 'ai_lines'),
-            'top_human_files' => self::top($fileTotals, 'human_lines'),
+            'calendar' => $this->aggregation->activity($perDay, $from, $to),
+            'ai_calendar' => $this->aiCalendar($user, $window, $to, $timezone),
+            'weekdays' => $this->weekdayAverages($perDay, $aiPerDay, $from, $dataEnd),
+            'top_projects' => $this->aggregation->topBuckets($projectTime, 'No project'),
+            'top_files' => $this->fileTimeTotals($user, $from, $dataEnd, $timezone),
+            'top_ai_projects' => $this->top($projectTotals, 'ai_lines'),
+            'top_human_projects' => $this->top($projectTotals, 'human_lines'),
+            'top_ai_files' => $this->top($fileTotals, 'ai_lines'),
+            'top_human_files' => $this->top($fileTotals, 'human_lines'),
         ];
     }
 
@@ -114,12 +107,12 @@ class BuildInsightsStats
      * Time per file over the period, live from heartbeats: the gap to each
      * heartbeat, when under the timeout and within the same day, is credited to
      * the file of the heartbeat that opened it (non-file heartbeats break the
-     * chain). Ranked by time — the one authorship-independent file signal, so
-     * it works for pre-2026 years too.
+     * chain). Ranked by time — the one authorship-independent file signal, so it
+     * works for pre-2026 years too.
      *
      * @return array<int, array{key: string, seconds: int}>
      */
-    private static function fileTimeTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd, string $timezone): array
+    private function fileTimeTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd, string $timezone): array
     {
         $timeoutMs = (int) config('stats.heartbeat_timeout_sec') * 1000;
 
@@ -147,8 +140,7 @@ class BuildInsightsStats
                 }
             }
 
-            $isFile = $heartbeat->entity_type === 'file' && $heartbeat->entity !== null;
-            $previousEntity = $isFile ? $heartbeat->entity : null;
+            $previousEntity = $heartbeat->entity_type === 'file' ? $heartbeat->entity : null;
             $previousTimeMs = $timeMs;
             $previousDay = $day;
         }
@@ -170,7 +162,7 @@ class BuildInsightsStats
      *
      * @return array<int, string>
      */
-    private static function availableRanges(User $user, CarbonImmutable $now): array
+    private function availableRanges(User $user, CarbonImmutable $now): array
     {
         $first = Duration::query()->forUser($user)->min('started_at');
 
@@ -189,7 +181,7 @@ class BuildInsightsStats
      *
      * @return array{0: CarbonImmutable, 1: CarbonImmutable}
      */
-    private static function resolveBounds(string $range, CarbonImmutable $now, string $timezone): array
+    private function resolveBounds(string $range, CarbonImmutable $now, string $timezone): array
     {
         if ($range === self::ROLLING_RANGE) {
             return [$now->subDays(self::WINDOW_DAYS - 1), $now];
@@ -201,18 +193,17 @@ class BuildInsightsStats
     }
 
     /**
-     * Net AI and human line changes per day, for the AI-share calendar:
-     * stored daily metrics for covered days, heartbeats for the live tail.
-     * Days without line data are present with zeros so the grid stays
-     * continuous.
+     * Net AI and human line changes per day for the AI-share calendar: stored
+     * daily metrics for covered days, heartbeats for the live tail. Days without
+     * line data are present with zeros so the grid stays continuous.
      *
      * @return array<int, array{date: string, ai_lines: int, human_lines: int}>
      */
-    private static function aiCalendar(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $dataEnd, CarbonImmutable $to, string $timezone): array
+    private function aiCalendar(User $user, StoredLiveWindow $window, CarbonImmutable $to, string $timezone): array
     {
-        $perDay = $storedUntil !== null ? self::storedLinesPerDay($user, $from, $storedUntil) : [];
+        $perDay = $window->hasStored() ? $this->summaries->linesPerDay($user, $window->from, $window->storedUntil) : [];
 
-        $heartbeats = self::lineHeartbeats($user, $liveFrom, $dataEnd)
+        $heartbeats = $this->lineHeartbeats($user, $window->liveFrom(), $window->through)
             ->select(['recorded_at', 'ai_line_changes', 'human_line_changes'])
             ->lazy();
 
@@ -226,7 +217,7 @@ class BuildInsightsStats
 
         $calendar = [];
 
-        for ($day = $from; $day <= $to; $day = $day->addDay()) {
+        for ($day = $window->from; $day <= $to; $day = $day->addDay()) {
             $date = $day->toDateString();
             $calendar[] = [
                 'date' => $date,
@@ -239,15 +230,15 @@ class BuildInsightsStats
     }
 
     /**
-     * Average coding seconds per weekday — total time on that weekday divided
-     * by how often it occurs in the window — with the `ai coding` share broken
-     * out so the bars can stack an AI portion.
+     * Average coding seconds per weekday — total time on that weekday divided by
+     * how often it occurs in the window — with the `ai coding` share broken out
+     * so the bars can stack an AI portion.
      *
      * @param  array<string, int>  $perDay
      * @param  array<string, int>  $aiPerDay
      * @return array<int, array{label: string, average_seconds: int, ai_average_seconds: int}>
      */
-    private static function weekdayAverages(array $perDay, array $aiPerDay, CarbonImmutable $from, CarbonImmutable $dataEnd): array
+    private function weekdayAverages(array $perDay, array $aiPerDay, CarbonImmutable $from, CarbonImmutable $dataEnd): array
     {
         $totals = array_fill(1, 7, 0);
         $aiTotals = array_fill(1, 7, 0);
@@ -273,20 +264,21 @@ class BuildInsightsStats
     }
 
     /**
-     * Net line changes per project: stored daily metrics for covered days
-     * plus the live heartbeat tail, merged by project.
+     * Net line changes per project: stored daily metrics for covered days plus
+     * the live heartbeat tail, merged by project.
      *
      * @return array<int, array{key: string, ai_lines: int, human_lines: int}>
      */
-    private static function projectLineTotals(User $user, CarbonImmutable $from, ?CarbonImmutable $storedUntil, CarbonImmutable $liveFrom, CarbonImmutable $dataEnd): array
+    private function projectLineTotals(User $user, StoredLiveWindow $window): array
     {
-        $totals = $storedUntil !== null ? self::storedProjectLineTotals($user, $from, $storedUntil) : [];
+        $totals = $window->hasStored() ? $this->summaries->projectLineTotals($user, $window->from, $window->storedUntil) : [];
 
-        $rows = self::lineHeartbeats($user, $liveFrom, $dataEnd)
+        $rows = $this->lineHeartbeats($user, $window->liveFrom(), $window->through)
             ->groupBy('project')
-            ->select('project')
+            ->toBase()
             ->selectRaw(
-                'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                'project, '
+                .'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
                 .'COALESCE(SUM(human_line_changes), 0) AS human_lines'
             )
             ->get();
@@ -314,20 +306,21 @@ class BuildInsightsStats
      *
      * @return array<int, array<string, mixed>>
      */
-    private static function fileLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd): array
+    private function fileLineTotals(User $user, CarbonImmutable $from, CarbonImmutable $dataEnd): array
     {
-        $rows = self::lineHeartbeats($user, $from, $dataEnd)
+        $rows = $this->lineHeartbeats($user, $from, $dataEnd)
             ->where('entity_type', 'file')
-            ->groupBy(['entity', 'project'])
-            ->select(['entity', 'project'])
+            ->groupBy('entity', 'project')
+            ->toBase()
             ->selectRaw(
-                'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
+                'entity, project, '
+                .'COALESCE(SUM(ai_line_changes), 0) AS ai_lines, '
                 .'COALESCE(SUM(human_line_changes), 0) AS human_lines'
             )
             ->get();
 
         return $rows
-            ->map(static fn ($row): array => [
+            ->map(static fn (object $row): array => [
                 'key' => basename(str_replace('\\', '/', $row->entity)),
                 'ai_lines' => (int) $row->ai_lines,
                 'human_lines' => (int) $row->human_lines,
@@ -340,7 +333,7 @@ class BuildInsightsStats
     /**
      * @return Builder<Heartbeat>
      */
-    private static function lineHeartbeats(User $user, CarbonImmutable $from, CarbonImmutable $end): Builder
+    private function lineHeartbeats(User $user, CarbonImmutable $from, CarbonImmutable $end): Builder
     {
         return Heartbeat::query()
             ->forUser($user)
@@ -355,7 +348,7 @@ class BuildInsightsStats
      * @param  array<int, array<string, mixed>>  $totals
      * @return array<int, array<string, mixed>>
      */
-    private static function top(array $totals, string $lineColumn): array
+    private function top(array $totals, string $lineColumn): array
     {
         return collect($totals)
             ->filter(static fn (array $row): bool => $row[$lineColumn] > 0)

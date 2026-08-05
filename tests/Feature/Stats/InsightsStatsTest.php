@@ -1,11 +1,11 @@
 <?php
 
-use App\Actions\Stats\BuildInsightsStats;
 use App\Models\DailyMetric;
 use App\Models\Duration;
 use App\Models\Heartbeat;
 use App\Models\SummaryItem;
 use App\Models\User;
+use App\Stats\InsightsStats;
 use Carbon\CarbonImmutable;
 
 /**
@@ -53,7 +53,7 @@ test('the calendar spans a full trailing year with empty days filled', function 
 
     makeInsightsDuration($user, '2026-06-30 09:00:00', 3600);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
 
     expect($stats['from'])->toBe('2025-07-01')
         ->and($stats['to'])->toBe('2026-06-30')
@@ -70,7 +70,7 @@ test('the ai calendar sums signed line changes per day in the user timezone', fu
     makeInsightsHeartbeat($user, '2026-06-29 13:00:00', ['ai_line_changes' => 40, 'human_line_changes' => 3]);
     makeInsightsHeartbeat($user, '2026-06-29 14:00:00', ['ai_line_changes' => -5]);
 
-    $days = collect(BuildInsightsStats::forUser($user)['ai_calendar'])->keyBy('date');
+    $days = collect(app(InsightsStats::class)->build($user)['ai_calendar'])->keyBy('date');
 
     expect($days['2026-06-30'])->toBe(['date' => '2026-06-30', 'ai_lines' => 35, 'human_lines' => 3])
         ->and($days['2026-06-29'])->toBe(['date' => '2026-06-29', 'ai_lines' => 0, 'human_lines' => 0]);
@@ -83,7 +83,7 @@ test('weekday averages divide by weekday occurrences and break out ai time', fun
     makeInsightsDuration($user, '2026-06-22 09:00:00', 3600);
     makeInsightsDuration($user, '2026-06-29 09:00:00', 3600, ['category' => 'ai coding']);
 
-    $weekdays = collect(BuildInsightsStats::forUser($user)['weekdays'])->keyBy('label');
+    $weekdays = collect(app(InsightsStats::class)->build($user)['weekdays'])->keyBy('label');
 
     // 2025-07-01..2026-06-30 contains 52 Mondays.
     expect($weekdays)->toHaveCount(7)
@@ -102,7 +102,7 @@ test('top projects rank by the requested line column with positives only', funct
     makeInsightsHeartbeat($user, '2026-06-30 09:01:00', ['project' => 'beta', 'ai_line_changes' => 200]);
     makeInsightsHeartbeat($user, '2026-06-30 09:02:00', ['project' => 'gamma', 'ai_line_changes' => -10, 'human_line_changes' => 50]);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
 
     expect(array_column($stats['top_ai_projects'], 'key'))->toBe(['beta', 'alpha'])
         ->and(array_column($stats['top_human_projects'], 'key'))->toBe(['gamma', 'alpha'])
@@ -134,7 +134,7 @@ test('covered days read stored summaries and the tail stays live', function () {
 
     makeInsightsDuration($user, '2026-06-30 09:00:00', 900, ['category' => 'ai coding']);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
     $calendar = collect($stats['calendar'])->keyBy('date');
     $weekdays = collect($stats['weekdays'])->keyBy('label');
 
@@ -168,7 +168,7 @@ test('the ai calendar and top projects merge stored metrics with the live tail',
     makeInsightsHeartbeat($user, '2026-06-30 09:00:00', ['project' => 'alpha', 'ai_line_changes' => 40]);
     makeInsightsHeartbeat($user, '2026-06-30 09:01:00', ['project' => 'beta', 'human_line_changes' => 10]);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
     $days = collect($stats['ai_calendar'])->keyBy('date');
 
     expect($days['2026-06-29'])->toBe(['date' => '2026-06-29', 'ai_lines' => 100, 'human_lines' => 20])
@@ -191,7 +191,7 @@ test('top files keep the full path and project behind a basename key', function 
         'ai_line_changes' => 999,
     ]);
 
-    $files = BuildInsightsStats::forUser($user)['top_ai_files'];
+    $files = app(InsightsStats::class)->build($user)['top_ai_files'];
 
     expect($files)->toHaveCount(1)
         ->and($files[0]['key'])->toBe('Widget.php')
@@ -208,7 +208,7 @@ test('a calendar year range spans that whole year and excludes other years', fun
     // Outside 2025 — must be excluded.
     makeInsightsDuration($user, '2026-06-30 09:00:00', 9999);
 
-    $stats = BuildInsightsStats::forUser($user, '2025');
+    $stats = app(InsightsStats::class)->build($user, '2025');
 
     $byDate = collect($stats['calendar'])->keyBy('date');
 
@@ -227,7 +227,7 @@ test('available ranges list the trailing year then each year back to first activ
     makeInsightsDuration($user, '2024-05-01 09:00:00', 60);
     makeInsightsDuration($user, '2026-06-30 09:00:00', 60);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
 
     expect($stats['range'])->toBe('12m')
         ->and($stats['ranges'])->toBe(['12m', '2026', '2025', '2024']);
@@ -238,7 +238,7 @@ test('an unknown range falls back to the trailing year', function () {
 
     makeInsightsDuration($user, '2026-06-30 09:00:00', 60);
 
-    $stats = BuildInsightsStats::forUser($user, 'nonsense');
+    $stats = app(InsightsStats::class)->build($user, 'nonsense');
 
     expect($stats['range'])->toBe('12m')
         ->and($stats['from'])->toBe('2025-07-01')
@@ -256,7 +256,7 @@ test('top projects and files rank by time and work without line data', function 
     makeInsightsHeartbeat($user, '2026-06-30 09:00:00', ['entity' => '/app/Big.php', 'entity_type' => 'file']);
     makeInsightsHeartbeat($user, '2026-06-30 09:02:00', ['entity' => '/app/Big.php', 'entity_type' => 'file']);
 
-    $stats = BuildInsightsStats::forUser($user);
+    $stats = app(InsightsStats::class)->build($user);
 
     expect($stats['top_projects'])->toBe([
         ['key' => 'alpha', 'seconds' => 3600],
