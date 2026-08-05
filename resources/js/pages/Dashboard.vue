@@ -6,9 +6,10 @@ import AgentsCard from '@/components/dashboard/AgentsCard.vue';
 import AiCodingCard from '@/components/dashboard/AiCodingCard.vue';
 import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
 import EditingCard from '@/components/dashboard/EditingCard.vue';
-import RangeSelector from '@/components/dashboard/RangeSelector.vue';
+import PageHeader from '@/components/dashboard/PageHeader.vue';
 import StatCard from '@/components/dashboard/StatCard.vue';
-import { formatDayLabel, formatDuration, pluralise } from '@/lib/format';
+import SummaryStats from '@/components/dashboard/SummaryStats.vue';
+import { formatDuration, pluralise } from '@/lib/format';
 import { dashboard } from '@/routes';
 import { show as showProject } from '@/routes/projects';
 import type { DashboardStats } from '@/types';
@@ -27,14 +28,6 @@ defineOptions({
         ],
     },
 });
-
-const dailyAverageHint = computed(() => {
-    const days = props.stats.active_days;
-
-    return `over ${days} ${pluralise(days, 'active day')}`;
-});
-
-const mostActive = computed(() => props.stats.most_active_day);
 
 const deepWorkHint = computed(() => {
     const blocks = props.stats.focus.deep_work_blocks;
@@ -59,41 +52,22 @@ const streakHint = computed(() => {
     <Head title="Dashboard" />
 
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-            <h1 class="text-xl font-semibold tracking-tight">
-                Coding activity
-            </h1>
+        <PageHeader
+            title="Coding activity"
+            :ranges="stats.ranges"
+            :current="stats.range"
+            :url="(range) => dashboard.url({ query: { range } })"
+        />
 
-            <RangeSelector
-                :ranges="stats.ranges"
-                :current="stats.range"
-                :url="(range) => dashboard.url({ query: { range } })"
-            />
-        </div>
+        <SummaryStats
+            :total-seconds="stats.total_seconds"
+            :today-seconds="stats.today_seconds"
+            :daily-average-seconds="stats.daily_average_seconds"
+            :active-days="stats.active_days"
+            :most-active-day="stats.most_active_day"
+        />
 
         <div class="grid auto-rows-min gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-                label="Total"
-                :value="formatDuration(stats.total_seconds)"
-            />
-            <StatCard
-                label="Today"
-                :value="formatDuration(stats.today_seconds)"
-            />
-            <StatCard
-                label="Daily average"
-                :value="formatDuration(stats.daily_average_seconds)"
-                :hint="dailyAverageHint"
-            />
-            <StatCard
-                label="Most active day"
-                :value="mostActive ? formatDuration(mostActive.seconds) : '—'"
-                :hint="
-                    mostActive
-                        ? formatDayLabel(mostActive.date)
-                        : 'No activity yet'
-                "
-            />
             <StatCard
                 label="Longest block"
                 :value="formatDuration(stats.focus.longest_block_seconds)"

@@ -3,7 +3,7 @@ import { Head } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import BreakdownCard from '@/components/dashboard/BreakdownCard.vue';
 import CalendarHeatmap from '@/components/dashboard/CalendarHeatmap.vue';
-import RangeSelector from '@/components/dashboard/RangeSelector.vue';
+import PageHeader from '@/components/dashboard/PageHeader.vue';
 import TopLinesCard from '@/components/dashboard/TopLinesCard.vue';
 import WeekdayAveragesCard from '@/components/dashboard/WeekdayAveragesCard.vue';
 import {
@@ -84,15 +84,13 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
     <Head title="Insights" />
 
     <div class="flex h-full flex-1 flex-col gap-4 p-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-            <h1 class="text-xl font-semibold tracking-tight">Insights</h1>
-            <RangeSelector
-                :ranges="stats.ranges"
-                :current="stats.range"
-                :labels="{ '12m': 'Last 12 months' }"
-                :url="(range) => insights.url({ query: { range } })"
-            />
-        </div>
+        <PageHeader
+            title="Insights"
+            :ranges="stats.ranges"
+            :current="stats.range"
+            :url="(range) => insights.url({ query: { range } })"
+            :labels="{ '12m': 'Last 12 months' }"
+        />
 
         <CalendarHeatmap
             title="Activity"
@@ -109,8 +107,14 @@ const aiShareDays = computed<CalendarHeatmapDay[]>(() =>
         <WeekdayAveragesCard :weekdays="stats.weekdays" />
 
         <div class="grid gap-4 md:grid-cols-2">
-            <BreakdownCard title="Top projects — by time" :items="stats.top_projects" />
-            <BreakdownCard title="Top files — by time" :items="stats.top_files" />
+            <BreakdownCard
+                title="Top projects — by time"
+                :items="stats.top_projects"
+            />
+            <BreakdownCard
+                title="Top files — by time"
+                :items="stats.top_files"
+            />
         </div>
 
         <div class="grid gap-4 md:grid-cols-2">
