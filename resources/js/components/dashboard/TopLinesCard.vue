@@ -34,12 +34,9 @@ function width(lines: number): string {
 }
 
 function headline(item: LineTotals): string {
-    const lines =
-        props.highlight === 'ai'
-            ? `${formatCompactNumber(item.ai_lines)} AI`
-            : `${formatCompactNumber(item.human_lines)} human`;
+    const count = props.highlight === 'ai' ? item.ai_lines : item.human_lines;
 
-    return `${lines} lines`;
+    return `${formatCompactNumber(count)} lines`;
 }
 
 function share(item: LineTotals): string | null {
@@ -86,23 +83,26 @@ function share(item: LineTotals): string | null {
                             {{ headline(item) }}
                         </span>
                     </div>
-                    <div class="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div class="flex h-full gap-0.5">
-                            <div
-                                v-if="positiveLines(item).ai > 0"
-                                class="h-full rounded-full bg-primary"
-                                :style="{
-                                    width: width(positiveLines(item).ai),
-                                }"
-                            />
-                            <div
-                                v-if="positiveLines(item).human > 0"
-                                class="h-full rounded-full bg-primary/30"
-                                :style="{
-                                    width: width(positiveLines(item).human),
-                                }"
-                            />
-                        </div>
+                    <div class="relative h-1.5 rounded-full bg-muted">
+                        <div
+                            v-if="
+                                positiveLines(item).ai +
+                                    positiveLines(item).human >
+                                0
+                            "
+                            class="absolute inset-y-0 left-0 rounded-full bg-primary/30"
+                            :style="{
+                                width: width(
+                                    positiveLines(item).ai +
+                                        positiveLines(item).human,
+                                ),
+                            }"
+                        />
+                        <div
+                            v-if="positiveLines(item).ai > 0"
+                            class="absolute inset-y-0 left-0 rounded-full bg-primary"
+                            :style="{ width: width(positiveLines(item).ai) }"
+                        />
                     </div>
                     <span
                         v-if="share(item)"

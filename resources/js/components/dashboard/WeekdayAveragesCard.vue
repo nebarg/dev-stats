@@ -46,28 +46,17 @@ function width(seconds: number): string {
                     <span class="w-8 text-sm text-muted-foreground">
                         {{ day.label }}
                     </span>
-                    <div class="h-3 flex-1 overflow-hidden rounded-full">
-                        <div class="flex h-full gap-0.5">
-                            <div
-                                v-if="day.ai_average_seconds > 0"
-                                class="h-full rounded-full bg-primary"
-                                :style="{
-                                    width: width(day.ai_average_seconds),
-                                }"
-                            />
-                            <div
-                                v-if="
-                                    day.average_seconds > day.ai_average_seconds
-                                "
-                                class="h-full rounded-full bg-primary/30"
-                                :style="{
-                                    width: width(
-                                        day.average_seconds -
-                                            day.ai_average_seconds,
-                                    ),
-                                }"
-                            />
-                        </div>
+                    <div class="relative h-3 flex-1 rounded-full bg-muted">
+                        <div
+                            v-if="day.average_seconds > 0"
+                            class="absolute inset-y-0 left-0 rounded-full bg-primary/30"
+                            :style="{ width: width(day.average_seconds) }"
+                        />
+                        <div
+                            v-if="day.ai_average_seconds > 0"
+                            class="absolute inset-y-0 left-0 rounded-full bg-primary"
+                            :style="{ width: width(day.ai_average_seconds) }"
+                        />
                     </div>
                     <span
                         class="w-16 text-right text-sm text-muted-foreground tabular-nums"

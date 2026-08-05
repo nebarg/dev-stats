@@ -87,15 +87,15 @@ const weekdayLabels = ['Mon', '', 'Wed', '', 'Fri', '', ''];
                 </div>
 
                 <div class="overflow-x-auto pb-1">
-                    <div class="flex h-4 gap-1">
+                    <div class="flex h-5 gap-1">
                         <div
                             v-for="(week, index) in weeks"
                             :key="index"
-                            class="w-3 shrink-0"
+                            class="relative w-3 shrink-0"
                         >
                             <span
                                 v-if="week.monthLabel"
-                                class="text-[10px] whitespace-nowrap text-muted-foreground"
+                                class="absolute top-0 left-0 text-[10px] leading-4 whitespace-nowrap text-muted-foreground"
                             >
                                 {{ week.monthLabel }}
                             </span>
