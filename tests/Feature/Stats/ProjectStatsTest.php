@@ -79,8 +79,8 @@ test('it credits within-timeout gaps to the file that opened them', function () 
     $files = app(ProjectStats::class)->build($user, 'app', '7d')['files'];
 
     expect($files)->toBe([
-        ['key' => 'A.php', 'path' => '/code/app/src/A.php', 'seconds' => 420, 'ai_lines' => 0, 'human_lines' => 0],
-        ['key' => 'B.php', 'path' => '/code/app/src/B.php', 'seconds' => 0, 'ai_lines' => 0, 'human_lines' => 0],
+        ['key' => 'src/A.php', 'path' => '/code/app/src/A.php', 'seconds' => 420, 'ai_lines' => 0, 'human_lines' => 0],
+        ['key' => 'src/B.php', 'path' => '/code/app/src/B.php', 'seconds' => 0, 'ai_lines' => 0, 'human_lines' => 0],
     ]);
 });
 
@@ -95,7 +95,7 @@ test('it does not credit time spent in another project between file heartbeats',
 
     // A is credited up to the switch away (120s), nothing while in `other`.
     expect($files)->toBe([
-        ['key' => 'A.php', 'path' => '/code/app/src/A.php', 'seconds' => 120, 'ai_lines' => 0, 'human_lines' => 0],
+        ['key' => 'src/A.php', 'path' => '/code/app/src/A.php', 'seconds' => 120, 'ai_lines' => 0, 'human_lines' => 0],
     ]);
 });
 
@@ -109,7 +109,7 @@ test('it lists only file entities but non-file heartbeats still close gaps', fun
     $files = app(ProjectStats::class)->build($user, 'app', '7d')['files'];
 
     expect($files)->toBe([
-        ['key' => 'A.php', 'path' => '/code/app/src/A.php', 'seconds' => 120, 'ai_lines' => 0, 'human_lines' => 0],
+        ['key' => 'src/A.php', 'path' => '/code/app/src/A.php', 'seconds' => 120, 'ai_lines' => 0, 'human_lines' => 0],
     ]);
 });
 
@@ -122,7 +122,7 @@ test('it starts a fresh session across a day boundary in the user timezone', fun
     $files = app(ProjectStats::class)->build($user, 'app', '7d')['files'];
 
     expect($files)->toBe([
-        ['key' => 'A.php', 'path' => '/code/app/src/A.php', 'seconds' => 0, 'ai_lines' => 0, 'human_lines' => 0],
+        ['key' => 'src/A.php', 'path' => '/code/app/src/A.php', 'seconds' => 0, 'ai_lines' => 0, 'human_lines' => 0],
     ]);
 });
 
@@ -150,6 +150,20 @@ test('it sums line changes per file and reports the total file count', function 
             'ai_lines' => 0,
             'human_lines' => 7,
         ]);
+});
+
+test('file keys are shown relative to the project root, falling back to the base name', function () {
+    $user = User::factory()->create();
+
+    makeProjectHeartbeat($user, '2026-06-30 10:00:00', '/Users/me/Code/app/resources/views/home.blade.php');
+    // No `/app/` directory in the path — the project name can't locate a root,
+    // so it falls back to the base name.
+    makeProjectHeartbeat($user, '2026-06-30 10:01:00', '/tmp/scratch/notes.md');
+
+    $keys = array_column(app(ProjectStats::class)->build($user, 'app', '7d')['files'], 'key');
+
+    expect($keys)->toContain('resources/views/home.blade.php')
+        ->and($keys)->toContain('notes.md');
 });
 
 test('the all range starts at the first activity of this project only', function () {

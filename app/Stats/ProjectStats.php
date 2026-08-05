@@ -136,11 +136,9 @@ class ProjectStats
             $previousDay = $day;
         }
 
-        $prefixLength = strlen($this->commonDirectoryPrefix(array_keys($files)));
-
         $top = collect($files)
-            ->map(static fn (array $file, string $path): array => [
-                'key' => substr($path, $prefixLength),
+            ->map(fn (array $file, string $path): array => [
+                'key' => $this->relativeToProjectRoot($path, $project),
                 'path' => $path,
                 'seconds' => (int) round($file['milliseconds'] / 1000),
                 'ai_lines' => $file['ai_lines'],
@@ -155,39 +153,21 @@ class ProjectStats
     }
 
     /**
-     * The directory prefix (trailing slash included) shared by every path, so
-     * file names display relative to the project root. A lone file reduces to
-     * its basename.
-     *
-     * @param  array<int, string>  $paths
+     * A file path shown relative to the project root: everything up to and
+     * including the first directory named for the project is dropped, so
+     * `/Users/me/code/app/src/X.php` for project `app` becomes `src/X.php`.
+     * Falls back to the base name when no such directory is in the path.
      */
-    private function commonDirectoryPrefix(array $paths): string
+    private function relativeToProjectRoot(string $path, string $project): string
     {
-        if ($paths === []) {
-            return '';
+        $normalised = str_replace('\\', '/', $path);
+        $marker = '/'.$project.'/';
+        $position = strpos($normalised, $marker);
+
+        if ($position === false) {
+            return basename($normalised);
         }
 
-        $directories = array_map(
-            static fn (string $path): array => array_slice(explode('/', $path), 0, -1),
-            $paths,
-        );
-
-        $prefix = array_first($directories);
-
-        foreach ($directories as $segments) {
-            $shared = [];
-
-            foreach ($segments as $index => $segment) {
-                if (($prefix[$index] ?? null) !== $segment) {
-                    break;
-                }
-
-                $shared[] = $segment;
-            }
-
-            $prefix = $shared;
-        }
-
-        return $prefix === [] ? '' : implode('/', $prefix).'/';
+        return substr($normalised, $position + strlen($marker));
     }
 }
